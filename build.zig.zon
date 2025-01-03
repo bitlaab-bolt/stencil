@@ -1,0 +1,13 @@
+.{
+    .name = "stencil",
+    .version = "0.1.0",
+    .dependencies = .{},
+    .paths = .{
+        "src",
+        "build.zig",
+        "build.zig.zon",
+        "CHANGELOG.md",
+        "LICENSE",
+        "README.md"
+    }
+}
