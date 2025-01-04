@@ -3,11 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to the [Semantic Version](https://semver.org/) guideline.
 
-## [v0.1.0] - 2024-12-23
+## [v0.1.0] - 2025-01-04
 
-Supports static and dynamic JSON data parsing.
+Supports static and dynamic content templating.
 
 ### Added
 
-- Static data parsing
-- Dynamic data parsing
+- Support for Static and Dynamic templates
+- Internal storage for lazy evaluation

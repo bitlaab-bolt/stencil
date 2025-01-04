@@ -1,5 +1,5 @@
-site_name: jsonic v0.1.0
-site_url: https://mydomain.org/jsonic
+site_name: stencil v0.1.0
+site_url: https://mydomain.org/stencil
 nav:
   - Getting Started: index.md
   - How to Install: installation.md

@@ -1,5 +1,4 @@
-// const parser = @import("./core/parser.zig");
+//! # Content Templating Engine
+//! - See documentation at - https://bitlaabstencil.web.app/
 
-
-// pub const StaticJson = parser.Static;
-// pub const DynamicJson = parser.Dynamic;
+pub const stencil = @import("./core/stencil.zig");

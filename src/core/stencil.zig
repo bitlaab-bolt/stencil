@@ -1,4 +1,4 @@
-//! Content Templating Engine
+//! # Content Templating Engine
 
 const std = @import("std");
 const fmt = std.fmt;
@@ -46,6 +46,7 @@ pub fn deinit(self: *Self) void {
 }
 
 /// # Creates New Template Context
+/// - `name` - Template storage identifier. Must be unique per context.
 pub fn new(self: *Self, name: []const u8) !*Template {
     const template = try self.heap.create(Template);
     template.* = Template { .parent = self, .name = name };
