@@ -23,9 +23,9 @@ pub fn main() !void {
     const tokens = try ctx.extract();
     defer ctx.destruct(tokens);
 
-    try ctx.inject(ctx.get(tokens, 0).?, 1, null);
-    try ctx.inject(ctx.get(tokens, 1).?, 1, null);
-    try ctx.inject(ctx.get(tokens, 2).?, 0, "{d: 23}");
+    // try ctx.inject(ctx.get(tokens, 0).?, 1, null);
+    try ctx.inject(ctx.get(tokens, 0).?, 2, null);
+    try ctx.inject(ctx.get(tokens, 1).?, 0, "{d: 23}");
 
     std.debug.print("{?s}\n\n\n", .{ctx.readFromCache()});
     std.debug.print("{?s}\n\n\n", .{try ctx.read()});

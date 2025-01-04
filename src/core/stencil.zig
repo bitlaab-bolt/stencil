@@ -250,11 +250,16 @@ const Template = struct {
         const end: usize = @intCast(off_end);
 
         const raw_token = data[begin..end];
+        const tok_sz = @as(isize, @intCast(raw_token.len));
 
         if (mem.eql(u8, token.names[option], "void")) {
-            const out = try mem.replaceOwned(
-                u8, p.heap, self.data.?, raw_token, ""
-            );
+            self.offset -= tok_sz;
+
+            const size = self.data.?.len - raw_token.len;
+            const out = try p.heap.alloc(u8, size);
+
+            mem.copyForwards(u8, out, self.data.?[0..begin]);
+            mem.copyForwards(u8, out[begin..], self.data.?[end..]);
             self.overwrite(out);
         } else {
             const tmp = if (payload) |bytes| bytes
@@ -262,7 +267,6 @@ const Template = struct {
             defer { if (payload == null) p.heap.free(tmp); }
 
             const tmp_sz = @as(isize, @intCast(tmp.len));
-            const tok_sz = @as(isize, @intCast(raw_token.len));
             self.offset += (tmp_sz - tok_sz);
 
             const size = (self.data.?.len + tmp.len) - raw_token.len;

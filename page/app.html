@@ -11,11 +11,12 @@
     <p>Some Content here...</p>
 
     {{ template/one.html }}
-    {{ template/three.html || template/four.html || void }}
 
     {{ template/two.html }}
 
-    {{ template/one.html || template/four.html }}
+    <!-- {{ template/three.html || template/four.html }} -->
+
+    {{ template/one.html || template/four.html || void }}
 
     {{ json ||}}
 
