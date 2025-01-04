@@ -11,7 +11,7 @@ pub fn main() !void {
     var template = try stencil.init(heap, "page", 128);
     defer template.deinit();
 
-    var ctx = try template.new();
+    var ctx = try template.new("app");
     try ctx.load("app.html");
     defer ctx.free();
 
@@ -24,7 +24,10 @@ pub fn main() !void {
     defer ctx.destruct(tokens);
 
     try ctx.inject(ctx.get(tokens, 0).?, 1, null);
-    try ctx.inject(ctx.get(tokens, 1).?, 1, "Hello!!!");
+    try ctx.inject(ctx.get(tokens, 1).?, 1, null);
+    try ctx.inject(ctx.get(tokens, 2).?, 0, "{d: 23}");
 
-    std.debug.print("{?s}\n", .{ctx.read()});
+    std.debug.print("{?s}\n\n\n", .{ctx.readFromCache()});
+    std.debug.print("{?s}\n\n\n", .{try ctx.read()});
+    std.debug.print("{?s}\n\n\n", .{ctx.readFromCache()});
 }

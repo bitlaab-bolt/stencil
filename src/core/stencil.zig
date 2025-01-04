@@ -5,6 +5,7 @@ const fmt = std.fmt;
 const mem = std.mem;
 const ascii = std.ascii;
 const ArrayList = std.ArrayList;
+const HashMap = std.StringHashMap;
 const Allocator = std.mem.Allocator;
 
 const utils = @import("./utils.zig");
@@ -17,6 +18,7 @@ heap: Allocator,
 root: []const u8,
 limit: usize,
 templates: ArrayList(*Template),
+storage: HashMap([]const u8),
 
 const Self = @This();
 
@@ -31,7 +33,8 @@ pub fn init(heap: Allocator, dir: []const u8, limit: usize) !Self {
         .heap = heap,
         .root = abs_path,
         .limit = limit,
-        .templates = ArrayList(*Template).init(heap)
+        .templates = ArrayList(*Template).init(heap),
+        .storage = HashMap([]const u8).init(heap)
     };
 }
 
@@ -39,18 +42,35 @@ pub fn deinit(self: *Self) void {
     self.heap.free(self.root);
     for (self.templates.items) |template| self.heap.destroy(template);
     self.templates.deinit();
+    self.storage.deinit();
 }
 
 /// # Creates New Template Context
-pub fn new(self: *Self) !*Template {
+pub fn new(self: *Self, name: []const u8) !*Template {
     const template = try self.heap.create(Template);
-    template.* = Template { .parent = self };
+    template.* = Template { .parent = self, .name = name };
     try self.templates.append(template);
     return template;
 }
 
+/// # Checks Template Data on Storage
+fn has(self: *Self, name: []const u8) bool {
+    return self.storage.contains(name);
+}
+
+/// # Saves Evaluated Template Data to the Storage
+fn put(self: *Self, name: []const u8, data: []const u8) !void {
+    try self.storage.put(name, data);
+}
+
+/// # Extracts Saved Template Data from the Storage
+fn get(self: *Self, name: []const u8) ?[]const u8 {
+    return self.storage.get(name);
+}
+
 const Template = struct {
     parent: *Self,
+    name: []const u8,
     data: ?[]u8 = null,
     offset: isize = 0,
 
@@ -85,8 +105,20 @@ const Template = struct {
     }
 
     /// # Reads the Evaluated Page Content
-    pub fn read(self: *Template) ?[]const u8 {
-        return self.data;
+    pub fn read(self: *Template) !?[]const u8 {
+        const p = self.parent;
+        if (self.data) |data| {
+            if (!p.has(self.name)) try p.put(self.name, data);
+            return data;
+        }
+
+        return null;
+    }
+
+    /// # Reads Cached Page Content from Storage
+    pub fn readFromCache(self: *Template) ?[]const u8 {
+        const p = self.parent;
+        return p.get(self.name);
     }
 
     /// # Embedded Template of a Given Page
