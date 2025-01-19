@@ -40,7 +40,10 @@ pub fn init(heap: Allocator, dir: []const u8, limit: usize) !Self {
 
 pub fn deinit(self: *Self) void {
     self.heap.free(self.root);
-    for (self.templates.items) |template| self.heap.destroy(template);
+    for (self.templates.items) |template| {
+        self.heap.free(template.name);
+        self.heap.destroy(template);
+    }
     self.templates.deinit();
     self.storage.deinit();
 }
@@ -48,8 +51,11 @@ pub fn deinit(self: *Self) void {
 /// # Creates New Template Context
 /// - `name` - Template storage identifier. Must be unique per context.
 pub fn new(self: *Self, name: []const u8) !*Template {
+    const title = try self.heap.alloc(u8, name.len);
+    mem.copyForwards(u8, title, name);
+
     const template = try self.heap.create(Template);
-    template.* = Template { .parent = self, .name = name };
+    template.* = Template { .parent = self, .name = title };
     try self.templates.append(template);
     return template;
 }
