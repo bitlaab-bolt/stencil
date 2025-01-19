@@ -96,6 +96,12 @@ try ctx.inject(ctx.get(tokens, 1).?, 1, null);
 try ctx.inject(ctx.get(tokens, 2).?, 0, "{d: 23}");
 ```
 
+## Replacing Token String
+
+```zig
+try ctx.replace("Old value", "New Value");
+```
+
 ## Extract Output
 
 Following example shows how to extract evaluated template content both from context and storage. You can read from cache once you read the content at least once, and you should use common identifier for lazy evaluation when evaluating same page template across multiple functions or modules.
