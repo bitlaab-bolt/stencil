@@ -140,6 +140,13 @@ const Template = struct {
         return .None;
     }
 
+    /// # Replaces Targeted Token with Given Value
+    pub fn replace(self: *Template, target: []const u8, val: []const u8) !void {
+        const p = self.parent;
+        const out = try mem.replaceOwned(u8, p.heap, self.data.?, target, val);
+        self.overwrite(out);
+    }
+
     /// # Expands Only Static Templates
     pub fn expand(self: *Template) !void {
         const p = self.parent;
@@ -190,7 +197,7 @@ const Template = struct {
                         dyn.*.end = v.end;
 
                         // Clones dynamic token data
-                        var names = ArrayList([]u8).init(p.heap);
+                        var names = ArrayList([]const u8).init(p.heap);
                         for (v.names) |name| {
                             const new_name = try p.heap.alloc(u8, name.len);
                             mem.copyForwards(u8, new_name, name);

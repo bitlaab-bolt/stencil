@@ -18,6 +18,8 @@ pub fn main() !void {
     const res = try ctx.status();
     std.debug.print("{any}\n", .{res});
 
+    try ctx.replace("../asset", "../../asset");
+
     try ctx.expand();
 
     const tokens = try ctx.extract();
