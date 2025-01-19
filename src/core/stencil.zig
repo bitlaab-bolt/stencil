@@ -40,7 +40,9 @@ pub fn init(heap: Allocator, dir: []const u8, limit: usize) !Self {
 
 pub fn deinit(self: *Self) void {
     self.heap.free(self.root);
+    std.debug.print("TEMPLATE AT LAST {}\n", .{self.templates.items.len});
     for (self.templates.items) |template| {
+        std.debug.print("{s}\n", .{template.name});
         self.heap.free(template.name);
         self.heap.destroy(template);
     }
@@ -106,6 +108,7 @@ const Template = struct {
         for (templates, 0..templates.len) |template, i| {
             if (template == self) {
                 const item = p.templates.orderedRemove(i);
+                p.heap.free(item.name);
                 p.heap.destroy(item);
             }
         }
