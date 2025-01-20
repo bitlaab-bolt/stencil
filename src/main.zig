@@ -11,6 +11,11 @@ pub fn main() !void {
     var template = try stencil.init(heap, "page", 128);
     defer template.deinit();
 
+    try testRun(&template);
+    try testRun(&template);
+}
+
+fn testRun(template: *stencil) !void {
     var ctx = try template.new("app");
     try ctx.load("app.html");
     defer ctx.free();
@@ -25,7 +30,6 @@ pub fn main() !void {
     const tokens = try ctx.extract();
     defer ctx.destruct(tokens);
 
-    // try ctx.inject(ctx.get(tokens, 0).?, 1, null);
     try ctx.inject(ctx.get(tokens, 0).?, 2, null);
     try ctx.inject(ctx.get(tokens, 1).?, 0, "{d: 23}");
 

@@ -1,9 +1,11 @@
 //! # Content Templating Engine
+//! TODO: Add multi-threading support
 
 const std = @import("std");
 const fmt = std.fmt;
 const mem = std.mem;
 const ascii = std.ascii;
+const crypto = std.crypto;
 const ArrayList = std.ArrayList;
 const HashMap = std.StringHashMap;
 const Allocator = std.mem.Allocator;
@@ -13,45 +15,44 @@ const parser = @import("./parser.zig");
 
 
 const Error = error { AlreadyLoaded };
+const Cache = struct { content: []const u8, hash: [32]u8 };
 
 heap: Allocator,
 root: []const u8,
-limit: usize,
+max_len: usize,
+cache: HashMap(Cache),
 templates: ArrayList(*Template),
-storage: HashMap([]const u8),
 
 const Self = @This();
 
-/// - `dir` - Base directory relative to your project
-/// - `limit` - Maximum file size limit in KB
+/// - `dir` - Root page directory relative to your project
+/// - `limit` - Maximum file size in KB for a page
 pub fn init(heap: Allocator, dir: []const u8, limit: usize) !Self {
-    const cwd = try std.fs.cwd().realpathAlloc(heap, ".");
-    defer heap.free(cwd);
-
-    const abs_path = try fmt.allocPrint(heap, "{s}/{s}", .{cwd, dir});
     return .{
         .heap = heap,
-        .root = abs_path,
-        .limit = limit,
-        .templates = ArrayList(*Template).init(heap),
-        .storage = HashMap([]const u8).init(heap)
+        .root = dir,
+        .max_len = limit,
+        .cache = HashMap(Cache).init(heap),
+        .templates = ArrayList(*Template).init(heap)
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.heap.free(self.root);
-    std.debug.print("TEMPLATE AT LAST {}\n", .{self.templates.items.len});
-    for (self.templates.items) |template| {
-        std.debug.print("{s}\n", .{template.name});
-        self.heap.free(template.name);
-        self.heap.destroy(template);
-    }
     self.templates.deinit();
-    self.storage.deinit();
+
+    var iter = self.cache.iterator();
+    while (iter.next()) |entry| {
+        const id = entry.key_ptr;
+        self.heap.free(id.*);
+
+        const cache: *Cache = entry.value_ptr;
+        self.heap.free(cache.content);
+    }
+    self.cache.deinit();
 }
 
 /// # Creates New Template Context
-/// - `name` - Template storage identifier. Must be unique per context.
+/// - `name` - Template cache storage identifier
 pub fn new(self: *Self, name: []const u8) !*Template {
     const title = try self.heap.alloc(u8, name.len);
     mem.copyForwards(u8, title, name);
@@ -62,19 +63,56 @@ pub fn new(self: *Self, name: []const u8) !*Template {
     return template;
 }
 
-/// # Checks Template Data on Storage
+/// # Checks Template Data on the Cache
 fn has(self: *Self, name: []const u8) bool {
-    return self.storage.contains(name);
+    return self.cache.contains(name);
 }
 
-/// # Saves Evaluated Template Data to the Storage
+/// # Saves Evaluated Template Data on the Cache
 fn put(self: *Self, name: []const u8, data: []const u8) !void {
-    try self.storage.put(name, data);
+    const id = try self.heap.alloc(u8, name.len);
+    mem.copyForwards(u8, id, name);
+
+    const digest = hash(data);
+    const content = try self.heap.alloc(u8, data.len);
+    mem.copyForwards(u8, content, data);
+
+    try self.cache.put(id, Cache {.content = content, .hash = digest});
+}
+
+/// # Updates Stale Cache Content
+fn update(self: *Self, name: []const u8, data: []const u8) !void {
+    const cache: *Cache = self.cache.getPtr(name).?;
+    self.heap.free(cache.content);
+
+    const digest = hash(data);
+    const content = try self.heap.alloc(u8, data.len);
+    mem.copyForwards(u8, content, data);
+
+    cache.content = content;
+    cache.hash = digest;
+}
+
+/// # Checks if Cached Data is Outdated
+fn stale(self: *Self, name: []const u8, data: []const u8) bool {
+    const digest = hash(data);
+    const cache = self.get(name).?;
+    return if (!mem.eql(u8, &cache.hash, &digest)) true else false;
 }
 
 /// # Extracts Saved Template Data from the Storage
-fn get(self: *Self, name: []const u8) ?[]const u8 {
-    return self.storage.get(name);
+fn get(self: *Self, name: []const u8) ?Cache {
+    return self.cache.get(name);
+}
+
+/// # Generates SHA-256 Digest of a Given Content
+fn hash(content: []const u8) [32]u8 {
+    var sha256 = crypto.hash.sha2.Sha256.init(.{});
+    sha256.update(content);
+
+    var digest: [32]u8 = undefined;
+    sha256.final(&digest);
+    return digest;
 }
 
 const Template = struct {
@@ -95,7 +133,7 @@ const Template = struct {
         if (self.data != null) return Error.AlreadyLoaded;
 
         const p = self.parent;
-        const data = try self.content(page, p.limit);
+        const data = try self.content(page, p.max_len);
         self.overwrite(data);
     }
 
@@ -117,8 +155,16 @@ const Template = struct {
     /// # Reads the Evaluated Page Content
     pub fn read(self: *Template) !?[]const u8 {
         const p = self.parent;
+
         if (self.data) |data| {
-            if (!p.has(self.name)) try p.put(self.name, data);
+            if (!p.has(self.name)) try p.put(self.name, data)
+            else {
+                // Updates the outdated cache
+                if (p.stale(self.name, data)) {
+                    try p.update(self.name, data);
+                }
+            }
+
             return data;
         }
 
@@ -128,7 +174,8 @@ const Template = struct {
     /// # Reads Cached Page Content from Storage
     pub fn readFromCache(self: *Template) ?[]const u8 {
         const p = self.parent;
-        return p.get(self.name);
+        if (p.get(self.name)) |cache| return cache.content
+        else return null;
     }
 
     /// # Embedded Template of a Given Page
@@ -167,7 +214,7 @@ const Template = struct {
                 for (tokens) |token| {
                     switch(token) {
                         .static => |v| {
-                            const tmp = try self.content(v.name, p.limit);
+                            const tmp = try self.content(v.name, p.max_len);
                             defer p.heap.free(tmp);
 
                             const out = try mem.replaceOwned(
@@ -279,7 +326,7 @@ const Template = struct {
             self.overwrite(out);
         } else {
             const tmp = if (payload) |bytes| bytes
-            else try self.content(token.names[option], p.limit);
+            else try self.content(token.names[option], p.max_len);
             defer { if (payload == null) p.heap.free(tmp); }
 
             const tmp_sz = @as(isize, @intCast(tmp.len));
