@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 const stencil = @import("./core/stencil.zig");
 
@@ -11,14 +12,20 @@ pub fn main() !void {
     var template = try stencil.init(heap, "page", 128);
     defer template.deinit();
 
-    try testRun(&template);
-    try testRun(&template);
+    try testRun(heap, &template);
+    try testRun(heap, &template);
+    try testRun(heap, &template);
 }
 
-fn testRun(template: *stencil) !void {
-    var ctx = try template.new("app");
+fn testRun(heap: Allocator, template: *stencil) !void {
+    const id = try heap.alloc(u8, 4);
+    std.mem.copyForwards(u8, id, "test");
+
+    var ctx = try template.new(id);
     try ctx.load("app.html");
     defer ctx.free();
+
+    heap.free(id);
 
     const res = try ctx.status();
     std.debug.print("{any}\n", .{res});
@@ -26,6 +33,8 @@ fn testRun(template: *stencil) !void {
     try ctx.replace("../asset", "../../asset");
 
     try ctx.expand();
+
+    std.debug.print("{?s}\n\n\n", .{try ctx.read()});
 
     const tokens = try ctx.extract();
     defer ctx.destruct(tokens);

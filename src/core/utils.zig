@@ -5,8 +5,8 @@ const fs = std.fs;
 const Allocator = std.mem.Allocator;
 
 /// # Loads File Content
+/// **WARNING:** Return value must be deallocated!
 /// - `max_size` - Maximum file size in bytes
-/// - `WARNING` Return value must be deallocated!
 pub fn loadFile(heap: Allocator, path: []const u8, max_size: usize) ![]u8 {
     const file = try fs.Dir.openFile(fs.cwd(), path, .{});
     defer file.close();
