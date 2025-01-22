@@ -153,6 +153,11 @@ const Template = struct {
     }
 
     /// # Reads the Evaluated Page Content
+    /// **Remarks:** Also responsible for generating and updating cache data
+    /// - For reading page data from the cache use `readFromCache()`
+    /// - If your page content is generated or modified at runtime
+    ///     - You should always use `read()` for most up to date content data
+    ///     - Or you can periodically call `read()` along with `readFromCache()`
     pub fn read(self: *Template) !?[]const u8 {
         const p = self.parent;
 
