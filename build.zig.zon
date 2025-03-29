@@ -1,6 +1,7 @@
 .{
-    .name = "stencil",
+    .name = .stencil,
     .version = "0.1.0",
+    .fingerprint = 0xe0deaaf6825d13d8,
     .dependencies = .{},
     .paths = .{
         "docs",

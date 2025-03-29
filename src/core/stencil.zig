@@ -18,25 +18,27 @@ const Error = error { AlreadyLoaded };
 const Cache = struct { content: []const u8, hash: [32]u8 };
 
 heap: Allocator,
-root: []const u8,
 max_len: usize,
+page_dir: []const u8,
 cache: HashMap(Cache),
 templates: ArrayList(*Template),
 
 const Self = @This();
 
-/// - `dir` - Root page directory relative to your project
+/// # Initiates the Template Engine
+/// - `dir` - Absolute path of the page directory
 /// - `limit` - Maximum file size in KB for a page
 pub fn init(heap: Allocator, dir: []const u8, limit: usize) !Self {
     return .{
         .heap = heap,
-        .root = dir,
         .max_len = limit,
+        .page_dir = dir,
         .cache = HashMap(Cache).init(heap),
         .templates = ArrayList(*Template).init(heap)
     };
 }
 
+/// # Destroys the Template Engine
 pub fn deinit(self: *Self) void {
     self.templates.deinit();
 
@@ -165,9 +167,7 @@ const Template = struct {
             if (!p.has(self.name)) try p.put(self.name, data)
             else {
                 // Updates the outdated cache
-                if (p.stale(self.name, data)) {
-                    try p.update(self.name, data);
-                }
+                if (p.stale(self.name, data)) try p.update(self.name, data);
             }
 
             return data;
@@ -424,10 +424,10 @@ const Template = struct {
     /// - `size` - Maximum page size in KB
     fn content(self: *Template, page: []const u8, size: usize) ![]const u8 {
         const p = self.parent;
-        const path = try fmt.allocPrint(p.heap, "{s}/{s}", .{p.root, page});
-        defer p.heap.free(path);
+        // const path = try fmt.allocPrint(p.heap, "{s}/{s}", .{p.page_dir, page});
+        // defer p.heap.free(path);
 
-        return try utils.loadFile(p.heap, path, 1024 * size);
+        return try utils.loadFile(p.heap, p.page_dir, page, 1024 * size);
     }
 
     /// # Overwrites the Existing Data

@@ -9,7 +9,13 @@ pub fn main() !void {
     defer std.debug.assert(gpa_mem.deinit() == .ok);
     const heap = gpa_mem.allocator();
 
-    var template = try stencil.init(heap, "page", 128);
+    const dir = try std.fs.selfExeDirPathAlloc(heap);
+    defer heap.free(dir);
+
+    const path = try std.fmt.allocPrint(heap, "{s}/../../../page", .{dir});
+    defer heap.free(path);
+
+    var template = try stencil.init(heap, path, 128);
     defer template.deinit();
 
     try testRun(heap, &template);

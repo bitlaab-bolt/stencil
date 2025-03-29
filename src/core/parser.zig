@@ -1,4 +1,5 @@
 //! # A Generic Plain Text Parser
+//! **Last Updated: 15 March 2025 - v1.0.0**
 //! - Expects octets slice as input data
 //! - Keeps tracks of `offset`, `column` and `line` numbers for easy debugging
 
@@ -18,37 +19,44 @@ offset: usize,
 column: usize,
 line: usize,
 
+/// # Initiates the Parser
+/// **WARNING:** Source data lifetime must be greater then the instance lifetime
 /// - `data` - Source content of plain text as the parser input
 pub fn init(data: []const u8) Self {
     return .{.src = data, .offset = 0, .column = 0, .line = 1};
 }
 
-/// # Peeks the byte value at the current cursor position
+/// # Peeks a Character
+/// The byte value at the current cursor position
 pub fn peek(self: *const Self) ?u8 {
     if (self.offset < self.src.len) return self.src[self.offset]
     else return null;
 }
 
-/// # Peeks the byte value at the given cursor position
+/// # Peeks a Character
+/// The byte value at the given cursor position
 pub fn peekAt(self: *const Self, offset: usize) ?u8 {
     if (offset < self.src.len) return self.src[offset]
     else return null;
 }
 
-/// # Peeks the string value within the given range
+/// # Peeks Multiple Characters
+/// The string value within the given offset range
 pub fn peekStr(self: *const Self, begin: usize, end: usize) ![]const u8 {
     if (begin >= end) return Error.InvalidOffsetRange;
     if (end <= self.src.len) return self.src[begin..end]
     else return Error.UnexpectedEOF;
 }
 
-/// # Consumes and returns the byte value at the current offset position
+/// # Returns a Character
+/// Consumes the byte value at the current offset position
 pub fn next(self: *Self) !u8 {
     if (self.offset < self.src.len) return self.consume()
     else return Error.UnexpectedEOF;
 }
 
-/// # Updates the internal parser state and returns consumed value
+/// # Consumes a Character
+/// Updates the internal parser state and returns consumed value
 fn consume(self: *Self) u8 {
     const char = self.src[self.offset];
     if (char == '\n') { self.line += 1; self.column = 0; }
@@ -58,13 +66,15 @@ fn consume(self: *Self) u8 {
     return char;
 }
 
-/// # Eats the given character when matches the `peek()` character
+/// # Eats the Character
+/// Eats the given character when matches the `peek()` character
 pub fn eat(self: *Self, char: u8) bool {
     self.expect(char) catch return false;
     return true;
 }
 
-/// # Expects `peek()` character to be equal to the `expected` character
+/// # Checks Equality
+/// Expects `peek()` character to be equal to the `expected` character
 fn expect(self: *Self, expected: u8) !void {
     if (self.peek()) |char| {
         if (char == expected) { _ = self.consume(); return; }
@@ -74,27 +84,31 @@ fn expect(self: *Self, expected: u8) !void {
     return Error.UnexpectedEOF;
 }
 
-/// # Eats the given characters when matches the `peek()` characters
+/// # Eats the Characters
+/// Eats the given characters when matches the `expectStr()` characters
 pub fn eatStr(self: *Self, slice: []const u8) bool {
     self.expectStr(slice) catch return false;
     return true;
 }
 
-/// # Expects `peek()` characters to be equal to the `expected` characters
+/// # Checks Equality
+/// Expects leading offset characters to be equal to the `expected` characters
 fn expectStr(self: *Self, expected: []const u8) !void {
     const offset = self.offset + expected.len;
     if (offset > self.src.len) return Error.UnexpectedEOF;
 
-    if (mem.startsWith(u8, self.src[self.offset..], expected)) {
+    const remaining = self.src[self.offset..];
+    if (mem.startsWith(u8, remaining, expected)) {
         var i: usize = 0;
-        while (i < expected.len) : (i += 1) { _ = self.consume(); }
+        while (i < expected.len) : (i += 1) _ = self.consume();
         return;
     }
 
     return Error.UnexpectedCharacter;
 }
 
-/// # Eats whitespace characters until a non-whitespace character is found
+/// # Eats Whitespace
+/// Eats until a non-whitespace character is found
 pub fn eatSp(self: *Self) bool {
     var ws = false;
     while (self.peek()) |char| {
@@ -111,12 +125,12 @@ pub fn eatSp(self: *Self) bool {
     return ws;
 }
 
-/// # Returns the current offset position
+/// # Returns the Current Offset Position
 pub fn cursor(self: *const Self) usize {
     return self.offset;
 }
 
-/// # Returns parsers internal state information
+/// # Returns Internal State Information
 pub fn info(self: *const Self) Info {
     return .{
         .size = self.src.len,
@@ -126,16 +140,14 @@ pub fn info(self: *const Self) Info {
     };
 }
 
-/// # Returns the error content upto the given `limit`
-/// - `limit` - Return value of the trace content as bytes
-///
-/// **Remarks:** Useful for identifying and debuging src content errors!
+/// # Traces Error Info
+/// **Remarks:** Useful for identifying and debugging src content errors!
+/// - `limit` - Returns the error content up to the given offset boundary
 pub fn trace(self: *const Self, limit: usize) []const u8 {
     const slice = self.src[0..self.offset];
     if (slice.len <= limit) return slice
     else return slice[(slice.len - limit)..];
 }
-
 
 test "SmokeTest" {
     const expectTest = testing.expect;
@@ -143,7 +155,8 @@ test "SmokeTest" {
     const expectEqual = testing.expectEqual;
 
     const src = "Game of Thrones!";
-    var p = Self.init(src);
+    var p = init(src);
+
     try expectEqual(@as(?u8, 'G'), p.peek());
     try expectEqual('G', try p.next());
     try expectEqual(@as(?u8, 'a'), p.peek());
