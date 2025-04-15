@@ -60,7 +60,7 @@ defer heap.free(dir);
 const path = try std.fmt.allocPrint(heap, "{s}/../../../page", .{dir});
 defer heap.free(path);
 
-var template = try Stencil.init(heap, "page", 128);
+var template = try Stencil.init(heap, path, 128);
 defer template.deinit();
 ```
 
