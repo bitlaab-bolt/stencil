@@ -26,13 +26,12 @@ pub fn main() !void {
 
 fn testRun(heap: Allocator, template: *Stencil) !void {
     const id = try heap.alloc(u8, 4);
+    defer heap.free(id);
     std.mem.copyForwards(u8, id, "test");
 
     var ctx = try template.new(id);
     try ctx.load("app.html");
     defer ctx.free();
-
-    heap.free(id);
 
     const res = try ctx.status();
     std.debug.print("{any}\n", .{res});

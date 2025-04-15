@@ -52,6 +52,12 @@ var gpa_mem = std.heap.DebugAllocator(.{}).init;
 defer std.debug.assert(gpa_mem.deinit() == .ok);
 const heap = gpa_mem.allocator();
 
+const dir = try std.fs.selfExeDirPathAlloc(heap);
+defer heap.free(dir);
+
+const path = try std.fmt.allocPrint(heap, "{s}/../../../page", .{dir});
+defer heap.free(path);
+
 var template = try Stencil.init(heap, "page", 128);
 defer template.deinit();
 ```
