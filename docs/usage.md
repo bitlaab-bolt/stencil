@@ -47,17 +47,34 @@ Usually only one token is used but you can add multiple tokens too. It's convent
 
 Make sure to copy the **Page** directory from the repository and paste it to your project.
 
+Copy and paste the following function into your `main.zig` file.
+
+```zig
+/// **Remarks:** Return value must be freed by the caller.
+fn getUri(heap: Allocator, child: []const u8) ![]const u8 {
+    const exe_dir = try std.fs.selfExeDirPathAlloc(heap);
+    defer heap.free(exe_dir);
+
+    if (std.mem.count(u8, exe_dir, ".zig-cache") == 1) {
+        const fmt_str = "{s}/../../../{s}";
+        return try std.fmt.allocPrint(heap, fmt_str, .{exe_dir, child});
+    } else if (std.mem.count(u8, exe_dir, "zig-out") == 1) {
+        const fmt_str = "{s}/../../{s}";
+        return try std.fmt.allocPrint(heap, fmt_str, .{exe_dir, child});
+    } else {
+        unreachable;
+    }
+}
+```
+
+Now, copy and paste the following code into your `main` function.
+
 ```zig
 var gpa_mem = std.heap.DebugAllocator(.{}).init;
 defer std.debug.assert(gpa_mem.deinit() == .ok);
 const heap = gpa_mem.allocator();
 
-const dir = try std.fs.selfExeDirPathAlloc(heap);
-defer heap.free(dir);
-
-// When you are on Windows or are running: ./zig-out/bin/stencil.exe
-// Make sure to change this path to `{s}/../../page`
-const path = try std.fmt.allocPrint(heap, "{s}/../../../page", .{dir});
+const path = try getUri(heap, "page");
 defer heap.free(path);
 
 var template = try Stencil.init(heap, path, 128);
