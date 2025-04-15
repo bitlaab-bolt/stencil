@@ -55,6 +55,8 @@ const heap = gpa_mem.allocator();
 const dir = try std.fs.selfExeDirPathAlloc(heap);
 defer heap.free(dir);
 
+// When you are on Windows or are running: ./zig-out/bin/stencil.exe
+// Make sure to change this path to `{s}/../../page`
 const path = try std.fmt.allocPrint(heap, "{s}/../../../page", .{dir});
 defer heap.free(path);
 
