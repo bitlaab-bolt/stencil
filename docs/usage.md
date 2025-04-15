@@ -4,7 +4,7 @@ First, import Stencil on your zig file.
 
 ```zig
 const stencil = @import("stencil");
-const Stencil = stencil.Stencil
+const Stencil = stencil.Stencil;
 ```
 
 ## Template Syntax
