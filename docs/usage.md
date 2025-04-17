@@ -55,15 +55,12 @@ fn getUri(heap: Allocator, child: []const u8) ![]const u8 {
     const exe_dir = try std.fs.selfExeDirPathAlloc(heap);
     defer heap.free(exe_dir);
 
-    if (std.mem.count(u8, exe_dir, ".zig-cache") == 1) {
-        const fmt_str = "{s}/../../../{s}";
-        return try std.fmt.allocPrint(heap, fmt_str, .{exe_dir, child});
-    } else if (std.mem.count(u8, exe_dir, "zig-out") == 1) {
+    if (std.mem.count(u8, exe_dir, "zig-out/bin") == 1) {
         const fmt_str = "{s}/../../{s}";
         return try std.fmt.allocPrint(heap, fmt_str, .{exe_dir, child});
-    } else {
-        unreachable;
     }
+
+    unreachable;
 }
 ```
 

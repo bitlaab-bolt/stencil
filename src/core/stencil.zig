@@ -277,7 +277,7 @@ const Template = struct {
         return null;
     }
 
-    /// # Deallocate Dynamic Token Names
+    /// # Destroys Dynamic Template Tokens
     pub fn destruct(self: *Template, dyn: ?[]*Dynamic) void {
         const p = self.parent;
 
