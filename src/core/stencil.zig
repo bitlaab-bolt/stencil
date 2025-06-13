@@ -420,12 +420,10 @@ const Template = struct {
     }
 
     /// # Loads Page Content
+    /// - `page` - Absolute page file path
     /// - `size` - Maximum page size in KB
     fn content(self: *Template, page: []const u8, size: usize) ![]const u8 {
         const p = self.parent;
-        // const path = try fmt.allocPrint(p.heap, "{s}/{s}", .{p.page_dir, page});
-        // defer p.heap.free(path);
-
         return try utils.loadFile(p.heap, p.page_dir, page, 1024 * size);
     }
 
