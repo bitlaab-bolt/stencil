@@ -130,6 +130,7 @@ const Template = struct {
 
     /// # Loads Page for Incremental Evaluation
     /// **Remakes:** Make sure to call `Template.free()` when done.
+    /// - `page` - File path relative to the given page directory
     pub fn load(self: *Template, page: []const u8) !void {
         if (self.data != null) return Error.AlreadyLoaded;
 
@@ -155,7 +156,7 @@ const Template = struct {
 
     /// # Reads the Evaluated Page Content
     /// **Remarks:** Also responsible for generating and updating cache data
-    /// - For reading page data from the cache use `readFromCache()`
+    /// - For reading page data from the cache, use `readFromCache()`
     /// - If your page content is generated or modified at runtime
     ///     - You should always use `read()` for most up to date content data
     ///     - Or you can periodically call `read()` along with `readFromCache()`
@@ -299,9 +300,9 @@ const Template = struct {
     }
 
     /// # Injects Dynamic Template Page
-    /// **Remarks:** Your must always inject from top to bottom order!
+    /// **Remarks:** You must always inject from top to bottom order!
     /// - `option` - Page index position of the dynamic template
-    /// - `payload` - For runtime generated content otherwise **null**
+    /// - `payload` - For runtime-generated content, otherwise **null**
     pub fn inject(
         self: *Template,
         token: *Dynamic,
@@ -362,7 +363,7 @@ const Template = struct {
             if (p.eatStr("{{")) begin = p.cursor() - 2;
             if (p.eatStr("}}")) end = p.cursor();
 
-            // Extracts token string
+            // Extracts the token string
             if (begin != null and end != null) {
                 const raw_token = try p.peekStr(begin.? + 2, end.? - 2);
                 const new_token = mem.trim(u8, raw_token, &ascii.whitespace);
