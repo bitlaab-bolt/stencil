@@ -420,7 +420,7 @@ const Template = struct {
     }
 
     /// # Loads Page Content
-    /// - `page` - Absolute page file path
+    /// - `page` - File path relative to the given page directory
     /// - `size` - Maximum page size in KB
     fn content(self: *Template, page: []const u8, size: usize) ![]const u8 {
         const p = self.parent;
