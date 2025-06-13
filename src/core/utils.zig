@@ -21,8 +21,8 @@ pub fn loadFile(heap: Allocator, dir: Str, path: Str, max_size: usize) !Str {
             const fmt_str = "{s} exceeds the max size of {d}KB";
             log(.err, fmt_str, .{path, max_size / 1024}, @src());
         } else {
-            const fmt_str = "File system error on: {s}";
-            log(.err, fmt_str, .{path}, @src());
+            const fmt_str = "File system error on: {s}{s}";
+            log(.err, fmt_str, .{dir, path}, @src());
         }
 
         return err;
