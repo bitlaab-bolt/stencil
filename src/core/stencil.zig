@@ -435,7 +435,7 @@ const Template = struct {
     }
 
     /// # Removes Duplicate Static Template Tokens
-    /// - For one-shot expansion, since static tokens has a fixed data mapping
+    /// - For one-shot expansion, since static tokens have a fixed data mapping
     fn hasStatic(tokens: []Token, name: []const u8) bool {
         for (tokens) |item| {
             switch (item) {
