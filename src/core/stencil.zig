@@ -64,6 +64,13 @@ pub fn new(self: *Self, name: []const u8) !*Template {
     return template;
 }
 
+/// # Reads Cached Page Content from Storage
+/// - `name` - Template cache storage identifier
+pub fn read(self: *Self, name: []const u8) ?[]const u8 {
+    return if (self.cache.get(name)) |cache| cache.content
+    else null;
+}
+
 /// # Checks Template Data on the Cache
 fn has(self: *Self, name: []const u8) bool {
     return self.cache.contains(name);
