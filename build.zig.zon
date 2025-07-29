@@ -1,6 +1,6 @@
 .{
     .name = .stencil,
-    .version = "0.5.0",
+    .version = "1.0.0",
     .fingerprint = 0xe0deaaf6825d13d8,
     .minimum_zig_version = "0.15.0-dev.337+4e700fdf8",
     .dependencies = .{},
@@ -11,6 +11,6 @@
         "build.zig.zon",
         "CHANGELOG.md",
         "LICENSE",
-        "README.md"
-    }
+        "README.md",
+    },
 }

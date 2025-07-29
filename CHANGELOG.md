@@ -23,6 +23,6 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item n
 
 
-## [v0.5.0] - 2025-04-15
+## [v1.0.0] - 2025-07-29
 
 Provides static and dynamic file templating.

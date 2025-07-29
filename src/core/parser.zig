@@ -1,7 +1,6 @@
-//! # A Generic Plain Text Parser
-//! **Last Updated: 15 March 2025 - v1.0.0**
-//! - Expects octets slice as input data
-//! - Keeps tracks of `offset`, `column` and `line` numbers for easy debugging
+//! # A Generic Plain Text Parser - v1.0.1
+//! - Expects octet slice as input (source) data
+//! - Keeps tracks of `offset`, `column`, and `line` numbers for easy debugging
 
 const std = @import("std");
 const mem = std.mem;
@@ -12,6 +11,33 @@ const Error = error { UnexpectedEOF, InvalidOffsetRange, UnexpectedCharacter };
 
 const Info = struct { size: usize, offset: usize, column: usize, line: usize };
 
+/// # Special ASCII Characters
+pub const SpecialChar = struct {
+    /// # Space Character
+    /// Also known as white space, used to separate tokens or fields.
+    const SP = 0x20;
+
+    /// # Line Feed
+    /// `\n` - Also known as new line. used to separate tokens or fields.
+    const LF = 0x0A;
+
+    /// # Carriage Return
+    /// `\r` - Moves the cursor to the beginning of the current line.
+    const CR = 0x0D;
+
+    /// # Horizontal Tab
+    /// `\t` - Moves the cursor to the next tab stop, often every 4 or 8 SPs.
+    const HT = 0x09;
+
+    /// # Vertical Tab
+    /// It's rarely used and often ignored or treated as whitespace.
+    const VT = 0x0B;
+
+    /// # Form Feed
+    /// It's rarely used and often ignored or treated as whitespace.
+    const FF = 0x0C;
+};
+
 const Self = @This();
 
 src: []const u8,
@@ -20,7 +46,7 @@ column: usize,
 line: usize,
 
 /// # Initiates the Parser
-/// **WARNING:** Source data lifetime must be greater then the instance lifetime
+/// **WARNING:** Source data lifetime must be greater than the instance lifetime
 /// - `data` - Source content of plain text as the parser input
 pub fn init(data: []const u8) Self {
     return .{.src = data, .offset = 0, .column = 0, .line = 1};
@@ -59,7 +85,7 @@ pub fn next(self: *Self) !u8 {
 /// Updates the internal parser state and returns consumed value
 fn consume(self: *Self) u8 {
     const char = self.src[self.offset];
-    if (char == '\n') { self.line += 1; self.column = 0; }
+    if (char == SpecialChar.LF) { self.line += 1; self.column = 0; }
     else self.column += 1;
     self.offset += 1;
 
@@ -67,7 +93,7 @@ fn consume(self: *Self) u8 {
 }
 
 /// # Eats the Character
-/// Eats the given character when matches the `peek()` character
+/// Eats the given character when it matches the `peek()` character
 pub fn eat(self: *Self, char: u8) bool {
     self.expect(char) catch return false;
     return true;
@@ -85,7 +111,7 @@ fn expect(self: *Self, expected: u8) !void {
 }
 
 /// # Eats the Characters
-/// Eats the given characters when matches the `expectStr()` characters
+/// Eats the given characters when match the `expectStr()` characters
 pub fn eatStr(self: *Self, slice: []const u8) bool {
     self.expectStr(slice) catch return false;
     return true;
@@ -113,8 +139,12 @@ pub fn eatSp(self: *Self) bool {
     var ws = false;
     while (self.peek()) |char| {
         switch (char) {
-            // [0x0B] VT character, [0x0C] FF character
-            ' ', '\t', '\n', '\r', 0x0B, 0x0C => {
+            SpecialChar.SP,
+            SpecialChar.HT,
+            SpecialChar.LF,
+            SpecialChar.CR,
+            SpecialChar.VT,
+            SpecialChar.FF => {
                 _ = self.consume();
                 ws = true;
             },
@@ -141,7 +171,7 @@ pub fn info(self: *const Self) Info {
 }
 
 /// # Traces Error Info
-/// **Remarks:** Useful for identifying and debugging src content errors!
+/// **Remarks:** Useful for identifying and debugging source content errors!
 /// - `limit` - Returns the error content up to the given offset boundary
 pub fn trace(self: *const Self, limit: usize) []const u8 {
     const slice = self.src[0..self.offset];
