@@ -10,36 +10,29 @@ const SrcLoc = std.builtin.SourceLocation;
 
 const Str = []const u8;
 
-//// # Loads File Content
-/// **WARNING:** Return value must be freed by the caller
-/// - `dir` - The absolute parent directory path
-/// - `path` - A sub file path relative to the given directory path
-/// - `max_size` - Maximum file size in bytes for the IO buffered reader
-pub fn loadFile(heap: Allocator, dir: Str, path: Str, max_size: usize) !Str {
-    return loadFileZ(heap, dir, path, max_size) catch |err| {
-        if (mem.eql(u8, @errorName(err), "StreamTooLong")) {
-            const fmt_str = "{s} exceeds the max size of {d}KB";
-            log(.err, fmt_str, .{path, max_size / 1024}, @src());
-        } else {
-            const fmt_str = "File system error on: {s}{s}";
-            log(.err, fmt_str, .{dir, path}, @src());
-        }
-
+/// # Loads File Content
+/// - `path` - An absolute file path (e.g., `/users/john/demo.txt`).
+///
+/// **WARNING:** Return value must be freed by the caller.
+pub fn loadFile(heap: Allocator, dir: Str, path: Str) !Str {
+    return loadFileZ(heap, dir, path) catch |err| {
+        const fmt_str = "File system error on: {s}";
+        log(.err, fmt_str, .{path}, @src());
         return err;
     };
 }
 
-fn loadFileZ(heap: Allocator, dir: Str, path: Str, max_size: usize) !Str {
+fn loadFileZ(heap: Allocator, dir: Str, path: Str) !Str {
     var abs_dir = try fs.openDirAbsolute(dir, .{});
     defer abs_dir.close();
 
     const file = try abs_dir.openFile(path, .{});
     defer file.close();
 
-    var buf_reader = std.io.bufferedReader(file.reader());
-    var input_stream = buf_reader.reader();
-
-    return try input_stream.readAllAlloc(heap, max_size);
+    const file_sz = try file.getEndPos();
+    const contents = try heap.alloc(u8, file_sz);
+    debug.assert(try file.readAll(contents) == file_sz);
+    return contents;
 }
 
 const Log = enum { info, warn, err };

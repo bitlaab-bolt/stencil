@@ -17,7 +17,6 @@ const Error = error { AlreadyLoaded };
 const Cache = struct { content: []const u8, hash: [32]u8 };
 
 heap: Allocator,
-max_len: usize,
 page_dir: []const u8,
 cache: HashMap(Cache),
 templates: ArrayList(*Template),
@@ -26,11 +25,9 @@ const Self = @This();
 
 /// # Initialize the Template Engine
 /// - `dir` - Absolute path of the page directory
-/// - `limit` - Maximum file size in KB for a page
-pub fn init(heap: Allocator, dir: []const u8, limit: usize) !Self {
+pub fn init(heap: Allocator, dir: []const u8) !Self {
     return .{
         .heap = heap,
-        .max_len = limit,
         .page_dir = dir,
         .cache = HashMap(Cache).init(heap),
         .templates = ArrayList(*Template){}
@@ -39,7 +36,7 @@ pub fn init(heap: Allocator, dir: []const u8, limit: usize) !Self {
 
 /// # Destroys the Template Engine
 pub fn deinit(self: *Self) void {
-    self.templates.deinit();
+    self.templates.deinit(self.heap);
 
     var iter = self.cache.iterator();
     while (iter.next()) |entry| {
@@ -141,8 +138,7 @@ const Template = struct {
     pub fn load(self: *Template, page: []const u8) !void {
         if (self.data != null) return Error.AlreadyLoaded;
 
-        const p = self.parent;
-        const data = try self.content(page, p.max_len);
+        const data = try self.content(page);
         self.overwrite(data);
     }
 
@@ -439,9 +435,9 @@ const Template = struct {
     /// # Loads Page Content
     /// - `page` - File path relative to the given page directory
     /// - `size` - Maximum page size in KB
-    fn content(self: *Template, page: []const u8, size: usize) ![]const u8 {
+    fn content(self: *Template, page: []const u8) ![]const u8 {
         const p = self.parent;
-        return try utils.loadFile(p.heap, p.page_dir, page, 1024 * size);
+        return try utils.loadFile(p.heap, p.page_dir, page);
     }
 
     /// # Overwrites the Existing Data
