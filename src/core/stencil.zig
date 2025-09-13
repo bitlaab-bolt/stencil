@@ -60,7 +60,7 @@ pub fn new(self: *Self, name: []const u8) !*Template {
 
     const template = try self.heap.create(Template);
     template.* = Template { .parent = self, .name = title };
-    try self.templates.append(template);
+    try self.templates.append(self.heap, template);
     return template;
 }
 
