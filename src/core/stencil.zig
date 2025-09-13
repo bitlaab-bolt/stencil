@@ -222,7 +222,7 @@ const Template = struct {
                 for (tokens) |token| {
                     switch(token) {
                         .static => |v| {
-                            const tmp = try self.content(v.name, p.max_len);
+                            const tmp = try self.content(v.name);
                             defer p.heap.free(tmp);
 
                             const out = try mem.replaceOwned(
@@ -339,7 +339,7 @@ const Template = struct {
             self.overwrite(out);
         } else {
             const tmp = if (payload) |bytes| bytes
-            else try self.content(token.names[option], p.max_len);
+            else try self.content(token.names[option]);
             defer { if (payload == null) p.heap.free(tmp); }
 
             const tmp_sz = @as(isize, @intCast(tmp.len));
