@@ -23,6 +23,10 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item n
 
 
+## [v1.1.0] - 2025-09-13
+
+Minor code changes required for Zig v0.15.1 breaking changes.
+
 ## [v1.0.0] - 2025-07-29
 
 Provides static and dynamic file templating.

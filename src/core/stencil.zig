@@ -33,7 +33,7 @@ pub fn init(heap: Allocator, dir: []const u8, limit: usize) !Self {
         .max_len = limit,
         .page_dir = dir,
         .cache = HashMap(Cache).init(heap),
-        .templates = ArrayList(*Template).init(heap)
+        .templates = ArrayList(*Template){}
     };
 }
 
@@ -251,7 +251,8 @@ const Template = struct {
     /// **Remakes:** Make sure to call `Template.destruct()` when done.
     pub fn extract(self: *Template) !?[]*Dynamic {
         const p = self.parent;
-        var dyn_tokens = ArrayList(*Dynamic).init(p.heap);
+        var dyn_tokens = ArrayList(*Dynamic){};
+        errdefer dyn_tokens.deinit(p.heap);
 
         if (try self.templateTokens(self.data.?)) |tokens| {
             defer self.destroy(tokens);
@@ -265,23 +266,27 @@ const Template = struct {
                         dyn.*.end = v.end;
 
                         // Clones dynamic token data
-                        var names = ArrayList([]const u8).init(p.heap);
+                        var names = ArrayList([]const u8){};
+                        errdefer names.deinit(p.heap);
+
                         for (v.names) |name| {
                             const new_name = try p.heap.alloc(u8, name.len);
                             mem.copyForwards(u8, new_name, name);
-                            try names.append(new_name);
+                            try names.append(p.heap, new_name);
                         }
 
-                        dyn.names = try names.toOwnedSlice();
-                        try dyn_tokens.append(dyn);
+                        dyn.names = try names.toOwnedSlice(p.heap);
+                        try dyn_tokens.append(p.heap, dyn);
                     }
                 }
             }
 
-            if (dyn_tokens.items.len > 0) return try dyn_tokens.toOwnedSlice();
+            if (dyn_tokens.items.len > 0) {
+                return try dyn_tokens.toOwnedSlice(p.heap);
+            }
         }
 
-        dyn_tokens.deinit();
+        dyn_tokens.deinit(p.heap);
         return null;
     }
 
@@ -358,7 +363,10 @@ const Template = struct {
     /// - `src` - Slice of the page content
     fn templateTokens(self: *Template, src: []const u8) !?[]Token {
         const parent = self.parent;
-        var tokens = ArrayList(Token).init(parent.heap);
+        const heap = parent.heap;
+
+        var tokens = ArrayList(Token){};
+        errdefer tokens.deinit(heap);
 
         var p = parser.init(src);
         var begin: ?usize = null;
@@ -383,25 +391,26 @@ const Template = struct {
                             .name = new_token,
                             .raw_token = try p.peekStr(begin.? - 2, end.?)
                         };
-                        try tokens.append(Token {.static = token});
+                        try tokens.append(heap, Token {.static = token});
                     }
                 } else {
-                    var dyn_tokens = ArrayList([]const u8).init(parent.heap);
+                    var dyn_tokens = ArrayList([]const u8){};
+                    errdefer dyn_tokens.deinit(heap);
 
                     while (iter.peek() != null) {
                         try dyn_tokens.append(
-                            mem.trim(u8, iter.next().?, &ascii.whitespace)
+                            heap, mem.trim(u8, iter.next().?, &ascii.whitespace)
                         );
                     }
 
                     // Dynamic token
-                    const items = try dyn_tokens.toOwnedSlice();
+                    const items = try dyn_tokens.toOwnedSlice(heap);
                     const token = Dynamic {
                         .names = items,
                         .begin = begin.? - 2,
                         .end = end.?
                     };
-                    try tokens.append(Token {.dynamic = token});
+                    try tokens.append(heap, Token {.dynamic = token});
                 }
 
                 begin = null; // Resets begin offset
@@ -412,8 +421,8 @@ const Template = struct {
             _ = try p.next();
         }
 
-        if (tokens.items.len > 0) return try tokens.toOwnedSlice()
-        else { tokens.deinit(); return null; }
+        if (tokens.items.len > 0) return try tokens.toOwnedSlice(heap)
+        else { tokens.deinit(heap); return null; }
     }
 
     /// # Deallocate Template Tokens
