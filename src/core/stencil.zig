@@ -63,6 +63,8 @@ pub fn new(self: *Self, name: []const u8) !*Template {
 
 /// # Reads Cached Page Content from Storage
 /// - `name` - Template cache storage identifier
+///
+/// **Note:** Reads cached content. Use `Template.read()` for cache validation.
 pub fn read(self: *Self, name: []const u8) ?[]const u8 {
     return if (self.cache.get(name)) |cache| cache.content
     else null;
@@ -308,13 +310,14 @@ const Template = struct {
     }
 
     /// # Injects Dynamic Template Page
-    /// **Remarks:** You must always inject from top to bottom order!
-    /// - `option` - Page index position of the dynamic template
+    /// **Remarks:** You must always inject from top to bottom order. Also 
+    ///
+    /// - `c_pos` - Current page index position of the dynamic template
     /// - `payload` - For runtime-generated content, otherwise **null**
     pub fn inject(
         self: *Template,
         token: *Dynamic,
-        option: usize,
+        c_pos: usize,
         payload: ?[]const u8
     ) !void {
         const p = self.parent;
@@ -328,7 +331,7 @@ const Template = struct {
         const raw_token = data[begin..end];
         const tok_sz = @as(isize, @intCast(raw_token.len));
 
-        if (mem.eql(u8, token.names[option], "void")) {
+        if (mem.eql(u8, token.names[c_pos], "void")) {
             self.offset -= tok_sz;
 
             const size = self.data.?.len - raw_token.len;
@@ -339,7 +342,7 @@ const Template = struct {
             self.overwrite(out);
         } else {
             const tmp = if (payload) |bytes| bytes
-            else try self.content(token.names[option]);
+            else try self.content(token.names[c_pos]);
             defer { if (payload == null) p.heap.free(tmp); }
 
             const tmp_sz = @as(isize, @intCast(tmp.len));

@@ -19,6 +19,8 @@ All template tokens must be a relative path to the base directory of the stencil
 
 ### Dynamic Template Syntax
 
+Dynamic template should always contain `||`.
+
 ```html
 <p>Some Content here...</p>
 {{ template/user.html || template/admin.html || void }}
@@ -73,7 +75,7 @@ const heap = gpa_mem.allocator();
 const path = try getUri(heap, "page");
 defer heap.free(path);
 
-var template = try Stencil.init(heap, path, 128);
+var template = try Stencil.init(heap, path);
 defer template.deinit();
 ```
 
@@ -93,7 +95,7 @@ Following example shows what kind of templating are being used.
 
 ```zig
 const status = try ctx.status();
-std.debug.print("{any}\n", .{status});
+std.debug.print("Template Status: {any}\n", .{status});
 ```
 
 ## Evaluate Static Templates
@@ -102,6 +104,10 @@ Following example evaluates all the static templates in a context at once, inclu
 
 ```zig
 try ctx.expand();
+
+std.debug.print("Cache: {?s}\n", .{ctx.readFromCache()});
+std.debug.print("Content: {?s}\n", .{try ctx.read()});
+std.debug.assert(ctx.readFromCache() != null);
 ```
 
 ## Evaluate Dynamic Templates
@@ -112,16 +118,21 @@ Following example shows how to conditionally evaluate a dynamic template token. 
 const tokens = try ctx.extract();
 defer ctx.destruct(tokens);
 
+// Injects `template/four.html` content
 try ctx.inject(ctx.get(tokens, 0).?, 1, null);
+// Injects nothing since the token `void`
 try ctx.inject(ctx.get(tokens, 1).?, 1, null);
-
+// Injects runtime content
 try ctx.inject(ctx.get(tokens, 2).?, 0, "{d: 23}");
+
+std.debug.print("Updated Content: {?s}\n", .{try ctx.read()});
 ```
 
 ## Replacing Token String
 
 ```zig
-try ctx.replace("Old value", "New Value");
+try ctx.replace("demo.js", "script.js");
+std.debug.print("Final Content: {?s}\n", .{try ctx.read()});
 ```
 
 ## Extract Output
@@ -129,7 +140,10 @@ try ctx.replace("Old value", "New Value");
 Following example shows how to extract evaluated template content both from context and storage. You can read from cache once you read the content at least once, and you should use common identifier for lazy evaluation when evaluating same page template across multiple functions or modules.
 
 ```zig
-std.debug.print("{?s}\n\n\n", .{ctx.readFromCache()});
-std.debug.print("{?s}\n\n\n", .{try ctx.read()});
-std.debug.print("{?s}\n\n\n", .{ctx.readFromCache()});
+std.debug.print("{?s}\n", .{ctx.readFromCache()});
+std.debug.print("{?s}\n", .{try ctx.read()});
+std.debug.print("{?s}\n", .{ctx.readFromCache()});
+
+// Only cached read without cache validation
+std.debug.print("{?s}\n", .{template.read("app")});
 ```

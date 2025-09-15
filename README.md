@@ -2,7 +2,7 @@
 
 **File Templating Engine**
 
-Stencil is an easy-to-use templating engine written in Zig.
+Stencil is a lightweight templating engine that combines performance and flexibility. It caches parsed templates for fast reuse, dynamically evaluates runtime values, and supports conditional injection so templates adapt to context.
 
 ## Platform Support
 

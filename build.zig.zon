@@ -1,6 +1,6 @@
 .{
     .name = .stencil,
-    .version = "1.2.0",
+    .version = "1.2.1",
     .fingerprint = 0xe0deaaf6825d13d8,
     .minimum_zig_version = "0.15.1",
     .dependencies = .{},
