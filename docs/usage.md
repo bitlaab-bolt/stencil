@@ -145,5 +145,6 @@ std.debug.print("{?s}\n", .{try ctx.read()});
 std.debug.print("{?s}\n", .{ctx.readFromCache()});
 
 // Only cached read without cache validation
-std.debug.print("{?s}\n", .{template.read("app")});
+const content = try template.read("app", null);
+std.debug.print("Template Content: {?s}\n", .{content});
 ```

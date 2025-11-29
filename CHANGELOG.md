@@ -23,6 +23,14 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item n
 
 
+## [v1.3.0] - 2025-11-29
+
+Structural code improvements and page re-evaluation feature.
+
+### Changed
+
+- `Stencil.read()` - Expects optional callback parameter and error handling.
+
 ## [v1.2.1] - 2025-09-15
 
 Better code examples and documentation.

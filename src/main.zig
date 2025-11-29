@@ -46,7 +46,8 @@ pub fn main() !void {
     try ctx.replace("demo.js", "script.js");
     std.debug.print("Final Content: {?s}\n", .{try ctx.read()});
 
-    std.debug.print("Template Content: {?s}\n", .{template.read("app")});
+    const content = try template.read("app", null);
+    std.debug.print("Template Content: {?s}\n", .{content});
 }
 
 fn getUri(heap: Allocator, child: []const u8) ![]const u8 {

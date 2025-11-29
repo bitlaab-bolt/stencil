@@ -1,5 +1,11 @@
 //! # File Templating Engine
-//! TODO: Add multi-threading support
+//!
+//! **IMPORTANT:** Stencil is single threaded, but can be used with in
+//! multi-threaded environment. Once all the pages are evaluated - page content
+//! get cached, therefore multi-threaded operations are read-only.
+//!
+//! - Only use callback with `read()` in debug mode.
+//! - Simultaneous or parallel page evaluation can produce undefined behavior.
 
 const std = @import("std");
 const mem = std.mem;
@@ -13,11 +19,14 @@ const utils = @import("./utils.zig");
 const parser = @import("./parser.zig");
 
 
-const Error = error { AlreadyLoaded };
-const Cache = struct { content: []const u8, hash: [32]u8 };
+const Str = []const u8;
+
+const Callback = *const fn(*Template) void;
+
+const Cache = struct { url: Str, content: Str, hash: [32]u8 };
 
 heap: Allocator,
-page_dir: []const u8,
+page_dir: Str,
 cache: HashMap(Cache),
 templates: ArrayList(*Template),
 
@@ -25,7 +34,7 @@ const Self = @This();
 
 /// # Initialize the Template Engine
 /// - `dir` - Absolute path of the page directory
-pub fn init(heap: Allocator, dir: []const u8) !Self {
+pub fn init(heap: Allocator, dir: Str) !Self {
     return .{
         .heap = heap,
         .page_dir = dir,
@@ -45,50 +54,66 @@ pub fn deinit(self: *Self) void {
 
         const cache: *Cache = entry.value_ptr;
         self.heap.free(cache.content);
+        self.heap.free(cache.url);
     }
     self.cache.deinit();
 }
 
 /// # Creates New Template Context
+/// **Remarks:** Duplicate template (same ID) will overwrite the previous cache.
+///
 /// - `name` - Template cache storage identifier
-pub fn new(self: *Self, name: []const u8) !*Template {
+pub fn new(self: *Self, name: Str) !*Template {
     const title = try self.heap.alloc(u8, name.len);
     mem.copyForwards(u8, title, name);
 
     const template = try self.heap.create(Template);
-    template.* = Template { .parent = self, .name = title };
+    template.* = Template {.parent = self, .name = title};
     try self.templates.append(self.heap, template);
     return template;
 }
 
 /// # Reads Cached Page Content from Storage
 /// - `name` - Template cache storage identifier
-///
-/// **Note:** Reads cached content. Use `Template.read()` for cache validation.
-pub fn read(self: *Self, name: []const u8) ?[]const u8 {
-    return if (self.cache.get(name)) |cache| cache.content
-    else null;
+/// - `cfn` - Callback function, Be caucasus and only use in debug mode
+pub fn read(self: *Self, name: Str, cfn: ?Callback) !?Str {
+    if (self.cache.get(name) == null) return null;
+
+    if (cfn) |cb| {
+        var ctx = try self.new(name);
+        errdefer ctx.free();
+
+        try ctx.load(self.cache.get(name).?.url);
+        defer ctx.free();
+
+        cb(ctx); // Invokes user defined function
+    }
+
+    return self.cache.get(name).?.content;
 }
 
 /// # Checks Template Data on the Cache
-fn has(self: *Self, name: []const u8) bool {
-    return self.cache.contains(name);
-}
+fn has(self: *Self, name: Str) bool { return self.cache.contains(name); }
 
 /// # Saves Evaluated Template Data on the Cache
-fn put(self: *Self, name: []const u8, data: []const u8) !void {
+fn put(self: *Self, name: Str, path: Str, data: Str) !void {
     const id = try self.heap.alloc(u8, name.len);
     mem.copyForwards(u8, id, name);
+
+    const url = try self.heap.alloc(u8, path.len);
+    mem.copyForwards(u8, url, path);
 
     const digest = hash(data);
     const content = try self.heap.alloc(u8, data.len);
     mem.copyForwards(u8, content, data);
 
-    try self.cache.put(id, Cache {.content = content, .hash = digest});
+    try self.cache.put(id, Cache {
+        .url = url, .content = content, .hash = digest
+    });
 }
 
 /// # Updates Stale Cache Content
-fn update(self: *Self, name: []const u8, data: []const u8) !void {
+fn update(self: *Self, name: Str, data: Str) !void {
     const cache: *Cache = self.cache.getPtr(name).?;
     self.heap.free(cache.content);
 
@@ -101,19 +126,17 @@ fn update(self: *Self, name: []const u8, data: []const u8) !void {
 }
 
 /// # Checks if Cached Data is Outdated
-fn stale(self: *Self, name: []const u8, data: []const u8) bool {
+fn stale(self: *Self, name: Str, data: Str) bool {
     const digest = hash(data);
     const cache = self.get(name).?;
     return if (!mem.eql(u8, &cache.hash, &digest)) true else false;
 }
 
 /// # Extracts Saved Template Data from the Storage
-fn get(self: *Self, name: []const u8) ?Cache {
-    return self.cache.get(name);
-}
+fn get(self: *Self, name: Str) ?Cache { return self.cache.get(name); }
 
 /// # Generates SHA-256 Digest of a Given Content
-fn hash(content: []const u8) [32]u8 {
+fn hash(content: Str) [32]u8 {
     var sha256 = crypto.hash.sha2.Sha256.init(.{});
     sha256.update(content);
 
@@ -122,23 +145,29 @@ fn hash(content: []const u8) [32]u8 {
     return digest;
 }
 
-const Template = struct {
+pub const Template = struct {
     parent: *Self,
-    name: []const u8,
+    name: Str,
+    url: ?Str = null,
     data: ?[]u8 = null,
     offset: isize = 0,
 
     const TemplateType = enum { None, Static, Dynamic, Mixed };
 
-    const Static = struct { name: []const u8, raw_token: []const u8 };
-    const Dynamic = struct { names: [][]const u8, begin: usize, end: usize };
+    const Static = struct { name: Str, raw_token: Str };
+    const Dynamic = struct { names: []Str, begin: usize, end: usize };
     const Token = union(enum) { static: Static, dynamic: Dynamic };
 
     /// # Loads Page for Incremental Evaluation
     /// **Remakes:** Make sure to call `Template.free()` when done.
     /// - `page` - File path relative to the given page directory
-    pub fn load(self: *Template, page: []const u8) !void {
-        if (self.data != null) return Error.AlreadyLoaded;
+    pub fn load(self: *Template, page: Str) !void {
+        if (self.data != null) return error.AlreadyLoaded;
+
+        // Sets path to the cache for future file reading
+        const url = try self.parent.heap.alloc(u8, page.len);
+        mem.copyForwards(u8, url, page);
+        self.url = url;
 
         const data = try self.content(page);
         self.overwrite(data);
@@ -147,6 +176,9 @@ const Template = struct {
     /// # Releases Template Resources
     pub fn free(self: *Template) void {
         const p = self.parent;
+
+        // Cache resources
+        p.heap.free(self.url.?);
         if (self.data) |data| p.heap.free(data);
 
         const templates = p.templates.items;
@@ -161,15 +193,16 @@ const Template = struct {
 
     /// # Reads the Evaluated Page Content
     /// **Remarks:** Also responsible for generating and updating cache data
+    ///
     /// - For reading page data from the cache, use `readFromCache()`
     /// - If your page content is generated or modified at runtime
     ///     - You should always use `read()` for most up to date content data
     ///     - Or you can periodically call `read()` along with `readFromCache()`
-    pub fn read(self: *Template) !?[]const u8 {
+    pub fn read(self: *Template) !?Str {
         const p = self.parent;
 
         if (self.data) |data| {
-            if (!p.has(self.name)) try p.put(self.name, data)
+            if (!p.has(self.name)) try p.put(self.name, self.url.?, data)
             else {
                 // Updates the outdated cache
                 if (p.stale(self.name, data)) try p.update(self.name, data);
@@ -182,7 +215,7 @@ const Template = struct {
     }
 
     /// # Reads Cached Page Content from Storage
-    pub fn readFromCache(self: *Template) ?[]const u8 {
+    pub fn readFromCache(self: *Template) ?Str {
         const p = self.parent;
         if (p.get(self.name)) |cache| return cache.content
         else return null;
@@ -207,7 +240,7 @@ const Template = struct {
     }
 
     /// # Replaces Targeted Token with Given Value
-    pub fn replace(self: *Template, target: []const u8, val: []const u8) !void {
+    pub fn replace(self: *Template, target: Str, val: Str) !void {
         const p = self.parent;
         const out = try mem.replaceOwned(u8, p.heap, self.data.?, target, val);
         self.overwrite(out);
@@ -264,7 +297,7 @@ const Template = struct {
                         dyn.*.end = v.end;
 
                         // Clones dynamic token data
-                        var names = ArrayList([]const u8){};
+                        var names = ArrayList(Str){};
                         errdefer names.deinit(p.heap);
 
                         for (v.names) |name| {
@@ -318,7 +351,7 @@ const Template = struct {
         self: *Template,
         token: *Dynamic,
         c_pos: usize,
-        payload: ?[]const u8
+        payload: ?Str
     ) !void {
         const p = self.parent;
         const data = self.data.?;
@@ -360,7 +393,7 @@ const Template = struct {
 
     /// # Extracts Template Tokens
     /// - `src` - Slice of the page content
-    fn templateTokens(self: *Template, src: []const u8) !?[]Token {
+    fn templateTokens(self: *Template, src: Str) !?[]Token {
         const parent = self.parent;
         const heap = parent.heap;
 
@@ -393,7 +426,7 @@ const Template = struct {
                         try tokens.append(heap, Token {.static = token});
                     }
                 } else {
-                    var dyn_tokens = ArrayList([]const u8){};
+                    var dyn_tokens = ArrayList(Str){};
                     errdefer dyn_tokens.deinit(heap);
 
                     while (iter.peek() != null) {
@@ -438,13 +471,13 @@ const Template = struct {
     /// # Loads Page Content
     /// - `page` - File path relative to the given page directory
     /// - `size` - Maximum page size in KB
-    fn content(self: *Template, page: []const u8) ![]const u8 {
+    fn content(self: *Template, page: Str) !Str {
         const p = self.parent;
         return try utils.loadFile(p.heap, p.page_dir, page);
     }
 
     /// # Overwrites the Existing Data
-    fn overwrite(self: *Template, data: []const u8) void {
+    fn overwrite(self: *Template, data: Str) void {
         const p = self.parent;
         if (self.data) |page_data| p.heap.free(page_data);
         self.data = @constCast(data);
@@ -452,7 +485,7 @@ const Template = struct {
 
     /// # Removes Duplicate Static Template Tokens
     /// - For one-shot expansion, since static tokens have a fixed data mapping
-    fn hasStatic(tokens: []Token, name: []const u8) bool {
+    fn hasStatic(tokens: []Token, name: Str) bool {
         for (tokens) |item| {
             switch (item) {
                 .static => |v| if (mem.eql(u8, v.name, name)) return true,
