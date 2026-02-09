@@ -60,9 +60,9 @@ pub fn deinit(self: *Self) void {
 }
 
 /// # Creates New Template Context
-/// **Remarks:** Duplicate template (same ID) will overwrite the previous cache.
-///
+/// **Remakes:** Make sure to call `Template.free()` when done.
 /// - `name` - Template cache storage identifier
+/// **WARNING:** Duplicate template (same ID) will overwrite the previous cache.
 pub fn new(self: *Self, name: Str) !*Template {
     const title = try self.heap.alloc(u8, name.len);
     mem.copyForwards(u8, title, name);
@@ -70,6 +70,14 @@ pub fn new(self: *Self, name: Str) !*Template {
     const template = try self.heap.create(Template);
     template.* = Template {.parent = self, .name = title};
     try self.templates.append(self.heap, template);
+    return template;
+}
+
+/// # Creates New SSR (Server Side Rendering) Template Context
+/// **Remakes:** Make sure to call `Template.freeSSR()` when done.
+pub fn newSSR(self: *Self) !*Template {
+    const template = try self.heap.create(Template);
+    template.* = Template {.parent = self, .name = "SSR"};
     return template;
 }
 
@@ -159,7 +167,6 @@ pub const Template = struct {
     const Token = union(enum) { static: Static, dynamic: Dynamic };
 
     /// # Loads Page for Incremental Evaluation
-    /// **Remakes:** Make sure to call `Template.free()` when done.
     /// - `page` - File path relative to the given page directory
     pub fn load(self: *Template, page: Str) !void {
         if (self.data != null) return error.AlreadyLoaded;
@@ -171,6 +178,19 @@ pub const Template = struct {
 
         const data = try self.content(page);
         self.overwrite(data);
+    }
+
+    /// # Loads Static Cache Content for Incremental Dynamic Evaluation
+    /// **Remakes:** Make sure to call `Template.free()` when done.
+    ///
+    /// - `src` - Base cache content for dynamic evaluation
+    pub fn loadSSR(self: *Template, src: Str) !void {
+        if (self.data != null) return error.AlreadyLoaded;
+
+        // Sets path to the cache for future file reading
+        const data = try self.parent.heap.alloc(u8, src.len);
+        mem.copyForwards(u8, data, src);
+        self.data = data;
     }
 
     /// # Releases Template Resources
@@ -189,6 +209,13 @@ pub const Template = struct {
                 p.heap.destroy(item);
             }
         }
+    }
+
+    /// # Releases SSR Template Resources
+    pub fn freeSSR(self: *Template) void {
+        const heap = self.parent.heap;
+        if (self.data) |data| heap.free(data);
+        heap.destroy(self);
     }
 
     /// # Reads the Evaluated Page Content
@@ -213,6 +240,9 @@ pub const Template = struct {
 
         return null;
     }
+
+    /// # Reads the Evaluated SSR Page Content
+    pub fn readSSR(self: *Template) ?Str { return self.data; }
 
     /// # Reads Cached Page Content from Storage
     pub fn readFromCache(self: *Template) ?Str {
@@ -271,9 +301,9 @@ pub const Template = struct {
                     }
                 }
 
-                if (!retry) return; // Incase of no static token
+                if (!retry) return; // In case of no static token
             } else {
-                break; // Incase of no embedded template
+                break; // In case of no embedded template
             }
         }
     }
@@ -439,7 +469,7 @@ pub const Template = struct {
                     const items = try dyn_tokens.toOwnedSlice(heap);
                     const token = Dynamic {
                         .names = items,
-                        .begin = begin.? - 2,
+                        .begin = begin.?,
                         .end = end.?
                     };
                     try tokens.append(heap, Token {.dynamic = token});
@@ -470,7 +500,6 @@ pub const Template = struct {
 
     /// # Loads Page Content
     /// - `page` - File path relative to the given page directory
-    /// - `size` - Maximum page size in KB
     fn content(self: *Template, page: Str) !Str {
         const p = self.parent;
         return try utils.loadFile(p.heap, p.page_dir, page);
