@@ -1,6 +1,7 @@
 //! # Utility Module
 
 const std = @import("std");
+const Io = std.Io;
 const fs = std.fs;
 const mem = std.mem;
 const debug = std.debug;
@@ -14,24 +15,24 @@ const Str = []const u8;
 /// - `path` - An absolute file path (e.g., `/users/john/demo.txt`).
 ///
 /// **WARNING:** Return value must be freed by the caller.
-pub fn loadFile(heap: Allocator, dir: Str, path: Str) !Str {
-    return loadFileZ(heap, dir, path) catch |err| {
+pub fn loadFile(io: Io, heap: Allocator, dir: Str, path: Str) !Str {
+    return loadFileZ(io, heap, dir, path) catch |err| {
         const fmt_str = "File system error on: {s}";
         log(.err, fmt_str, .{path}, @src());
         return err;
     };
 }
 
-fn loadFileZ(heap: Allocator, dir: Str, path: Str) !Str {
-    var abs_dir = try fs.openDirAbsolute(dir, .{});
-    defer abs_dir.close();
+fn loadFileZ(io: Io, heap: Allocator, dir: Str, path: Str) !Str {
+    var abs_dir = try Io.Dir.openDirAbsolute(io, dir, .{});
+    defer abs_dir.close(io);
 
-    const file = try abs_dir.openFile(path, .{});
-    defer file.close();
+    const file = try abs_dir.openFile(io, path, .{});
+    defer file.close(io);
 
-    const file_sz = try file.getEndPos();
+    const file_sz = try file.length(io);
     const contents = try heap.alloc(u8, file_sz);
-    debug.assert(try file.readAll(contents) == file_sz);
+    debug.assert(try file.readPositionalAll(io, contents, 0) == file_sz);
     return contents;
 }
 
@@ -45,6 +46,6 @@ pub fn log(kind: Log, comptime format: Str, args: anytype, src: SrcLoc) void {
         .warn => std.log.warn(format, args),
         .err => std.log.err(format, args)
     }
-    const fmt_str = "source: {s} at {d}:{d}\n";
+    const fmt_str = "Source: {s} at {d}:{d}\n";
     debug.print(fmt_str, .{src.file, src.line, src.column});
 }

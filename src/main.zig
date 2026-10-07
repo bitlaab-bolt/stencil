@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const Stencil = @import("stencil").Stencil;
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     std.debug.print("Code coverage example\n", .{});
 
     // Let's start from here...
@@ -12,10 +12,10 @@ pub fn main() !void {
     defer std.debug.assert(gpa_mem.deinit() == .ok);
     const heap = gpa_mem.allocator();
 
-    const path = try getUri(heap, "page");
+    const path = try getUri(init.io, heap, "page");
     defer heap.free(path);
 
-    var template = try Stencil.init(heap, path);
+    var template = try Stencil.init(init.io, heap, path);
     defer template.deinit();
 
     var ctx = try template.new("app");
@@ -50,8 +50,9 @@ pub fn main() !void {
     std.debug.print("Template Content: {?s}\n", .{content});
 }
 
-fn getUri(heap: Allocator, child: []const u8) ![]const u8 {
-    const exe_dir = try std.fs.selfExeDirPathAlloc(heap);
+/// **WARNING:** Return value must be freed by the caller.
+fn getUri(io: std.Io, heap: Allocator, child: []const u8) ![]const u8 {
+    const exe_dir = try std.process.executableDirPathAlloc(io, heap);
     defer heap.free(exe_dir);
 
     if (std.mem.count(u8, exe_dir, "zig-out/bin") == 1) {

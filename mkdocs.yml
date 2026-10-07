@@ -1,5 +1,5 @@
-site_name: stencil v1.4.0
-site_url: http://127.0.0.1
+site_name: stencil v1.5.0
+site_url: http://0.0.0.0:8001
 nav:
   - Getting Started: index.md
   - How to Install: installation.md

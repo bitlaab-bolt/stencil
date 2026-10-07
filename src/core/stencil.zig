@@ -25,6 +25,7 @@ const Callback = *const fn(*Template) void;
 
 const Cache = struct { url: Str, content: Str, hash: [32]u8 };
 
+io: std.Io,
 heap: Allocator,
 page_dir: Str,
 cache: HashMap(Cache),
@@ -34,12 +35,13 @@ const Self = @This();
 
 /// # Initialize the Template Engine
 /// - `dir` - Absolute path of the page directory
-pub fn init(heap: Allocator, dir: Str) !Self {
+pub fn init(io: std.Io, heap: Allocator, dir: Str) !Self {
     return .{
+        .io = io,
         .heap = heap,
         .page_dir = dir,
-        .cache = HashMap(Cache).init(heap),
-        .templates = ArrayList(*Template){}
+        .templates = .empty,
+        .cache = HashMap(Cache).init(heap)
     };
 }
 
@@ -312,7 +314,7 @@ pub const Template = struct {
     /// **Remakes:** Make sure to call `Template.destruct()` when done.
     pub fn extract(self: *Template) !?[]*Dynamic {
         const p = self.parent;
-        var dyn_tokens = ArrayList(*Dynamic){};
+        var dyn_tokens: ArrayList(*Dynamic) = .empty;
         errdefer dyn_tokens.deinit(p.heap);
 
         if (try self.templateTokens(self.data.?)) |tokens| {
@@ -327,7 +329,7 @@ pub const Template = struct {
                         dyn.*.end = v.end;
 
                         // Clones dynamic token data
-                        var names = ArrayList(Str){};
+                        var names: ArrayList(Str) = .empty;
                         errdefer names.deinit(p.heap);
 
                         for (v.names) |name| {
@@ -427,7 +429,7 @@ pub const Template = struct {
         const parent = self.parent;
         const heap = parent.heap;
 
-        var tokens = ArrayList(Token){};
+        var tokens: ArrayList(Token) = .empty;
         errdefer tokens.deinit(heap);
 
         var p = parser.init(src);
@@ -456,7 +458,7 @@ pub const Template = struct {
                         try tokens.append(heap, Token {.static = token});
                     }
                 } else {
-                    var dyn_tokens = ArrayList(Str){};
+                    var dyn_tokens: ArrayList(Str) = .empty;
                     errdefer dyn_tokens.deinit(heap);
 
                     while (iter.peek() != null) {
@@ -502,7 +504,9 @@ pub const Template = struct {
     /// - `page` - File path relative to the given page directory
     fn content(self: *Template, page: Str) !Str {
         const p = self.parent;
-        return try utils.loadFile(p.heap, p.page_dir, page);
+        const io = p.io;
+
+        return try utils.loadFile(io, p.heap, p.page_dir, page);
     }
 
     /// # Overwrites the Existing Data

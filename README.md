@@ -6,12 +6,12 @@ Stencil is a lightweight templating engine that combines performance and flexibi
 
 ## Platform Support
 
-Stencil has cross-platform support.
+Fully cross-platform.
 
 ## Dependency
 
-Stencil has no external dependencies.
+No external dependencies.
 
 ## Documentation
 
-For most up-to-date documentation see - [**Stencil Documentation**](https://bitlaabstencil.web.app/).
+For most up-to-date documentation see - [**Stencil Documentation**](https://bitlaab.com/api-doc?pkg=stencil).
