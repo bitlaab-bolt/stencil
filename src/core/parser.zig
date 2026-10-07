@@ -11,7 +11,6 @@ const Error = error { UnexpectedEOF, InvalidOffsetRange, UnexpectedCharacter };
 
 const Info = struct { size: usize, offset: usize, column: usize, line: usize };
 
-/// # Special ASCII Characters
 pub const SpecialChar = struct {
     /// # Space Character
     /// Also known as white space, used to separate tokens or fields.
@@ -22,11 +21,11 @@ pub const SpecialChar = struct {
     const LF = 0x0A;
 
     /// # Carriage Return
-    /// `\r` - Moves the cursor to the beginning of the current line.
+    /// `\r` - Moves terminal cursor to the beginning of the current line.
     const CR = 0x0D;
 
     /// # Horizontal Tab
-    /// `\t` - Moves the cursor to the next tab stop, often every 4 or 8 SPs.
+    /// `\t` - Moves terminal cursor to the next tab stop, often every 4 SPs.
     const HT = 0x09;
 
     /// # Vertical Tab
@@ -53,36 +52,36 @@ pub fn init(data: []const u8) Self {
 }
 
 /// # Peeks a Character
-/// The byte value at the current cursor position
+/// - The byte value at the current cursor position
 pub fn peek(self: *const Self) ?u8 {
     if (self.offset < self.src.len) return self.src[self.offset]
     else return null;
 }
 
 /// # Peeks a Character
-/// The byte value at the given cursor position
+/// - The byte value at the given cursor position
 pub fn peekAt(self: *const Self, offset: usize) ?u8 {
     if (offset < self.src.len) return self.src[offset]
     else return null;
 }
 
 /// # Peeks Multiple Characters
-/// The string value within the given offset range
+/// - The string value within the given offset range
 pub fn peekStr(self: *const Self, begin: usize, end: usize) ![]const u8 {
-    if (begin >= end) return Error.InvalidOffsetRange;
+    if (begin > end) return Error.InvalidOffsetRange;
     if (end <= self.src.len) return self.src[begin..end]
     else return Error.UnexpectedEOF;
 }
 
 /// # Returns a Character
-/// Consumes the byte value at the current offset position
+/// - Consumes the byte value at the current offset position
 pub fn next(self: *Self) !u8 {
     if (self.offset < self.src.len) return self.consume()
     else return Error.UnexpectedEOF;
 }
 
 /// # Consumes a Character
-/// Updates the internal parser state and returns consumed value
+/// - Updates the internal parser state and returns consumed value
 fn consume(self: *Self) u8 {
     const char = self.src[self.offset];
     if (char == SpecialChar.LF) { self.line += 1; self.column = 0; }
@@ -93,14 +92,14 @@ fn consume(self: *Self) u8 {
 }
 
 /// # Eats the Character
-/// Eats the given character when it matches the `peek()` character
+/// - Eats the given character when it matches the `peek()` character
 pub fn eat(self: *Self, char: u8) bool {
     self.expect(char) catch return false;
     return true;
 }
 
 /// # Checks Equality
-/// Expects `peek()` character to be equal to the `expected` character
+/// - Expects `peek()` character to be equal to the `expected` character
 fn expect(self: *Self, expected: u8) !void {
     if (self.peek()) |char| {
         if (char == expected) { _ = self.consume(); return; }
@@ -111,16 +110,17 @@ fn expect(self: *Self, expected: u8) !void {
 }
 
 /// # Eats the Characters
-/// Eats the given characters when match the `expectStr()` characters
+/// - Eats the given characters when match the `expectStr()` characters
+/// - An empty `slice` always succeeds without consuming anything
 pub fn eatStr(self: *Self, slice: []const u8) bool {
     self.expectStr(slice) catch return false;
     return true;
 }
 
 /// # Checks Equality
-/// Expects leading offset characters to be equal to the `expected` characters
+/// - Expects leading offset characters to be equal to the `expected` characters
 fn expectStr(self: *Self, expected: []const u8) !void {
-    const offset = self.offset + expected.len;
+    const offset = self.offset +| expected.len;
     if (offset > self.src.len) return Error.UnexpectedEOF;
 
     const remaining = self.src[self.offset..];
@@ -172,7 +172,8 @@ pub fn info(self: *const Self) Info {
 
 /// # Traces Error Info
 /// **Remarks:** Useful for identifying and debugging source content errors!
-/// - `limit` - Returns the error content up to the given offset boundary
+///
+/// - `limit` - Maximum number of trailing bytes / full content when lesser.
 pub fn trace(self: *const Self, limit: usize) []const u8 {
     const slice = self.src[0..self.offset];
     if (slice.len <= limit) return slice
@@ -205,4 +206,71 @@ test "SmokeTest" {
     try expectTest(mem.eql(u8, "Thrones!", try p.peekStr(p.cursor(), src.len)));
     try expectTest(p.eatStr("Thrones!"));
     try expectError(Error.UnexpectedEOF, p.next());
+}
+
+test "LineAndColumnTracking" {
+    const expectEqual = testing.expectEqual;
+
+    var p = init("ab\ncd\r\nef\tx");
+    _ = try p.next(); // 'a' -> column 1
+    _ = try p.next(); // 'b' -> column 2
+    _ = try p.next(); // '\n' -> line 2, column 0
+    _ = try p.next(); // 'c' -> column 1
+    _ = try p.next(); // 'd' -> column 2
+    _ = try p.next(); // CR counted as an ordinary byte -> column 3
+    _ = try p.next(); // '\n' -> line 3, column 0
+    _ = try p.next(); // 'e' -> column 1
+    _ = try p.next(); // 'f' -> column 2
+    _ = try p.next(); // HT counted as an ordinary byte -> column 3
+
+    const state = p.info();
+    try expectEqual(@as(usize, 3), state.line);
+    try expectEqual(@as(usize, 3), state.column);
+}
+
+test "EatWhitespaceAcrossLines" {
+    const expectTest = testing.expect;
+    const expectEqual = testing.expectEqual;
+
+    var p = init(" \t\r\nx");
+    try expectTest(p.eatSp());
+    try expectEqual(@as(?u8, 'x'), p.peek());
+    try expectEqual(@as(usize, 2), p.info().line);
+    try expectTest(!p.eatSp());
+}
+
+test "EatStrNoPartialConsume" {
+    const expectTest = testing.expect;
+    const expectEqual = testing.expectEqual;
+
+    var p = init("world");
+    try expectTest(!p.eatStr("worx"));
+    try expectEqual(@as(usize, 0), p.cursor());
+    try expectEqual(@as(?u8, 'w'), p.peek());
+}
+
+test "EmptySliceEdgeCases" {
+    const expectEqual = testing.expectEqual;
+    const expectError = testing.expectError;
+    const expectTest = testing.expect;
+
+    var p = init("abcd");
+    try expectTest(p.eatStr(""));
+    try expectEqual(@as(usize, 0), p.cursor());
+    try expectEqual(@as(usize, 0), (try p.peekStr(0, 0)).len);
+    try expectEqual(@as(usize, 2), (try p.peekStr(1, 3)).len);
+    try expectError(Error.InvalidOffsetRange, p.peekStr(2, 1));
+}
+
+test "TraceTrailingContent" {
+    const expectTest = testing.expect;
+
+    var p = init("0123456789");
+    var i: usize = 0;
+    while (i < 6) : (i += 1) _ = try p.next();
+
+    try expectTest(mem.eql(u8, "012345", p.trace(10)));
+    try expectTest(mem.eql(u8, "012345", p.trace(6)));
+    try expectTest(mem.eql(u8, "12345", p.trace(5)));
+    try expectTest(mem.eql(u8, "", p.trace(0)));
 }

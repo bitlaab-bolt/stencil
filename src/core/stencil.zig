@@ -46,7 +46,16 @@ pub fn init(io: std.Io, heap: Allocator, dir: Str) !Self {
 }
 
 /// # Destroys the Template Engine
+/// **Remarks:** Any `Template` created with `new()` that was never released
+/// with `Template.free()` is cleaned up here as well.
 pub fn deinit(self: *Self) void {
+    for (self.templates.items) |template| {
+        self.heap.free(template.name);
+        if (template.url) |url| self.heap.free(url);
+        if (template.data) |data| self.heap.free(data);
+        self.heap.destroy(template);
+    }
+
     self.templates.deinit(self.heap);
 
     var iter = self.cache.iterator();
@@ -85,7 +94,7 @@ pub fn newSSR(self: *Self) !*Template {
 
 /// # Reads Cached Page Content from Storage
 /// - `name` - Template cache storage identifier
-/// - `cfn` - Callback function, Be caucasus and only use in debug mode
+/// - `cfn` - Callback function, Be cautious and only use in debug mode
 pub fn read(self: *Self, name: Str, cfn: ?Callback) !?Str {
     if (self.cache.get(name) == null) return null;
 
@@ -109,28 +118,44 @@ fn has(self: *Self, name: Str) bool { return self.cache.contains(name); }
 fn put(self: *Self, name: Str, path: Str, data: Str) !void {
     const id = try self.heap.alloc(u8, name.len);
     mem.copyForwards(u8, id, name);
+    errdefer self.heap.free(id);
 
     const url = try self.heap.alloc(u8, path.len);
     mem.copyForwards(u8, url, path);
+    errdefer self.heap.free(url);
 
     const digest = hash(data);
     const content = try self.heap.alloc(u8, data.len);
     mem.copyForwards(u8, content, data);
+    errdefer self.heap.free(content);
 
-    try self.cache.put(id, Cache {
-        .url = url, .content = content, .hash = digest
-    });
+    if (self.cache.getPtr(id)) |existing| {
+        // # Duplicate Identifier
+        // - overwrites the stale entry (keeps the original key)
+        self.heap.free(existing.url);
+        self.heap.free(existing.content);
+        self.heap.free(id);
+
+        existing.url = url;
+        existing.content = content;
+        existing.hash = digest;
+    } else {
+        try self.cache.put(id, Cache {
+            .url = url, .content = content, .hash = digest
+        });
+    }
 }
 
 /// # Updates Stale Cache Content
 fn update(self: *Self, name: Str, data: Str) !void {
     const cache: *Cache = self.cache.getPtr(name).?;
-    self.heap.free(cache.content);
 
     const digest = hash(data);
     const content = try self.heap.alloc(u8, data.len);
     mem.copyForwards(u8, content, data);
 
+    // Frees only after the new content is secured
+    self.heap.free(cache.content);
     cache.content = content;
     cache.hash = digest;
 }
@@ -168,6 +193,9 @@ pub const Template = struct {
     const Dynamic = struct { names: []Str, begin: usize, end: usize };
     const Token = union(enum) { static: Static, dynamic: Dynamic };
 
+    /// Upper bound for `expand()` passes - guards against cyclic includes
+    const max_expand_passes: usize = 256;
+
     /// # Loads Page for Incremental Evaluation
     /// - `page` - File path relative to the given page directory
     pub fn load(self: *Template, page: Str) !void {
@@ -196,11 +224,12 @@ pub const Template = struct {
     }
 
     /// # Releases Template Resources
+    /// **Remarks:** Safe to call even when `load()` was never invoked.
     pub fn free(self: *Template) void {
         const p = self.parent;
 
         // Cache resources
-        p.heap.free(self.url.?);
+        if (self.url) |url| p.heap.free(url);
         if (self.data) |data| p.heap.free(data);
 
         const templates = p.templates.items;
@@ -209,6 +238,7 @@ pub const Template = struct {
                 const item = p.templates.orderedRemove(i);
                 p.heap.free(item.name);
                 p.heap.destroy(item);
+                break;
             }
         }
     }
@@ -279,9 +309,14 @@ pub const Template = struct {
     }
 
     /// # Expands Only Static Templates
+    /// **Remarks:** Cyclic includes raise `error.CyclicTemplate`
     pub fn expand(self: *Template) !void {
         const p = self.parent;
+        var passes: usize = 0;
         while (true) {
+            passes += 1;
+            if (passes > max_expand_passes) return error.CyclicTemplate;
+
             if (try self.templateTokens(self.data.?)) |tokens| {
                 defer self.destroy(tokens);
 
@@ -388,8 +423,18 @@ pub const Template = struct {
         const p = self.parent;
         const data = self.data.?;
 
+        if (c_pos >= token.names.len) return error.InvalidTokenIndex;
+
         const off_begin = @as(isize, @intCast(token.begin)) + self.offset;
         const off_end = @as(isize, @intCast(token.end)) + self.offset;
+
+        // Guards against desynchronized offsets (e.g., content modified
+        // between `extract()` and `inject()`)
+        if (off_begin < 0 or off_end < 0 or off_begin > off_end
+        or @as(usize, @intCast(off_end)) > data.len) {
+            return error.InvalidTokenOffset;
+        }
+
         const begin: usize = @intCast(off_begin);
         const end: usize = @intCast(off_end);
 
@@ -448,40 +493,45 @@ pub const Template = struct {
                 const new_token = mem.trim(u8, raw_token, &ascii.whitespace);
 
                 var iter = mem.tokenizeAny(u8, new_token, "||");
-                if (mem.eql(u8, iter.peek().?, new_token)) {
-                    // Static token
-                    if (!hasStatic(tokens.items, new_token)) {
-                        const token = Static {
-                            .name = new_token,
-                            .raw_token = try p.peekStr(begin.? - 2, end.?)
+                if (iter.peek()) |first| {
+                    if (mem.eql(u8, first, new_token)) {
+                        // Static token
+                        if (!hasStatic(tokens.items, new_token)) {
+                            const token = Static {
+                                .name = new_token,
+                                .raw_token = try p.peekStr(begin.?, end.?)
+                            };
+                            try tokens.append(heap, Token {.static = token});
+                        }
+                    } else {
+                        var dyn_tokens: ArrayList(Str) = .empty;
+                        errdefer dyn_tokens.deinit(heap);
+
+                        while (iter.peek() != null) {
+                            try dyn_tokens.append(
+                                heap, mem.trim(u8, iter.next().?, &ascii.whitespace)
+                            );
+                        }
+
+                        // Dynamic token
+                        const items = try dyn_tokens.toOwnedSlice(heap);
+                        const token = Dynamic {
+                            .names = items,
+                            .begin = begin.?,
+                            .end = end.?
                         };
-                        try tokens.append(heap, Token {.static = token});
+                        try tokens.append(heap, Token {.dynamic = token});
                     }
-                } else {
-                    var dyn_tokens: ArrayList(Str) = .empty;
-                    errdefer dyn_tokens.deinit(heap);
-
-                    while (iter.peek() != null) {
-                        try dyn_tokens.append(
-                            heap, mem.trim(u8, iter.next().?, &ascii.whitespace)
-                        );
-                    }
-
-                    // Dynamic token
-                    const items = try dyn_tokens.toOwnedSlice(heap);
-                    const token = Dynamic {
-                        .names = items,
-                        .begin = begin.?,
-                        .end = end.?
-                    };
-                    try tokens.append(heap, Token {.dynamic = token});
                 }
 
                 begin = null; // Resets begin offset
                 end = null;   // Resets end offset
+                continue; // Re-checks from the current position (handles
+                          // adjacent tokens and tokens ending at EOF)
             }
 
             try skipComment(&p);
+            if (p.peek() == null) break;
             _ = try p.next();
         }
 
