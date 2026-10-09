@@ -10,7 +10,6 @@
 const std = @import("std");
 const mem = std.mem;
 const ascii = std.ascii;
-const crypto = std.crypto;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
 const HashMap = std.StringHashMap;
@@ -23,7 +22,7 @@ const Str = []const u8;
 
 const Callback = *const fn(*Template) void;
 
-const Cache = struct { url: Str, content: Str, hash: [32]u8 };
+const Cache = struct { url: Str, content: Str };
 
 io: std.Io,
 heap: Allocator,
@@ -96,19 +95,22 @@ pub fn newSSR(self: *Self) !*Template {
 /// - `name` - Template cache storage identifier
 /// - `cfn` - Callback function, Be cautious and only use in debug mode
 pub fn read(self: *Self, name: Str, cfn: ?Callback) !?Str {
-    if (self.cache.get(name) == null) return null;
+    const cached = self.cache.get(name) orelse return null;
 
     if (cfn) |cb| {
         var ctx = try self.new(name);
         errdefer ctx.free();
 
-        try ctx.load(self.cache.get(name).?.url);
+        try ctx.load(cached.url);
         defer ctx.free();
 
         cb(ctx); // Invokes user defined function
+
+        // Re-reads in case the callback modified the cache
+        return self.cache.get(name).?.content;
     }
 
-    return self.cache.get(name).?.content;
+    return cached.content;
 }
 
 /// # Checks Template Data on the Cache
@@ -124,7 +126,6 @@ fn put(self: *Self, name: Str, path: Str, data: Str) !void {
     mem.copyForwards(u8, url, path);
     errdefer self.heap.free(url);
 
-    const digest = hash(data);
     const content = try self.heap.alloc(u8, data.len);
     mem.copyForwards(u8, content, data);
     errdefer self.heap.free(content);
@@ -138,10 +139,9 @@ fn put(self: *Self, name: Str, path: Str, data: Str) !void {
 
         existing.url = url;
         existing.content = content;
-        existing.hash = digest;
     } else {
         try self.cache.put(id, Cache {
-            .url = url, .content = content, .hash = digest
+            .url = url, .content = content
         });
     }
 }
@@ -150,35 +150,22 @@ fn put(self: *Self, name: Str, path: Str, data: Str) !void {
 fn update(self: *Self, name: Str, data: Str) !void {
     const cache: *Cache = self.cache.getPtr(name).?;
 
-    const digest = hash(data);
     const content = try self.heap.alloc(u8, data.len);
     mem.copyForwards(u8, content, data);
 
     // Frees only after the new content is secured
     self.heap.free(cache.content);
     cache.content = content;
-    cache.hash = digest;
 }
 
 /// # Checks if Cached Data is Outdated
 fn stale(self: *Self, name: Str, data: Str) bool {
-    const digest = hash(data);
     const cache = self.get(name).?;
-    return if (!mem.eql(u8, &cache.hash, &digest)) true else false;
+    return !mem.eql(u8, cache.content, data);
 }
 
 /// # Extracts Saved Template Data from the Storage
 fn get(self: *Self, name: Str) ?Cache { return self.cache.get(name); }
-
-/// # Generates SHA-256 Digest of a Given Content
-fn hash(content: Str) [32]u8 {
-    var sha256 = crypto.hash.sha2.Sha256.init(.{});
-    sha256.update(content);
-
-    var digest: [32]u8 = undefined;
-    sha256.final(&digest);
-    return digest;
-}
 
 pub const Template = struct {
     parent: *Self,
@@ -320,7 +307,13 @@ pub const Template = struct {
             if (try self.templateTokens(self.data.?)) |tokens| {
                 defer self.destroy(tokens);
 
-                var retry: bool = false;
+                // Replaces every static token found in this pass - raw tokens
+                // are searched patterns, so the source data must stay alive
+                // until the last replacement is applied
+                var current: Str = self.data.?;
+                var changed = false;
+                errdefer if (changed) p.heap.free(current);
+
                 for (tokens) |token| {
                     switch(token) {
                         .static => |v| {
@@ -328,17 +321,24 @@ pub const Template = struct {
                             defer p.heap.free(tmp);
 
                             const out = try mem.replaceOwned(
-                                u8, p.heap, self.data.?, v.raw_token, tmp
+                                u8, p.heap, current, v.raw_token, tmp
                             );
-                            self.overwrite(out);
-                            retry = true;
-                            break;
+
+                            // Frees the intermediate buffer - the original
+                            // data is released only after the last pass
+                            if (changed) p.heap.free(current);
+                            current = out;
+                            changed = true;
                         },
                         .dynamic => {}
                     }
                 }
 
-                if (!retry) return; // In case of no static token
+                if (!changed) return; // In case of no static token
+
+                const old = self.data.?;
+                self.data = @constCast(current);
+                p.heap.free(old);
             } else {
                 break; // In case of no embedded template
             }
@@ -477,6 +477,10 @@ pub const Template = struct {
         var tokens: ArrayList(Token) = .empty;
         errdefer tokens.deinit(heap);
 
+        // Deduplicates static tokens in O(1) per occurrence
+        var seen = std.StringHashMap(void).init(heap);
+        defer seen.deinit();
+
         var p = parser.init(src);
         var begin: ?usize = null;
         var end: ?usize = null;
@@ -496,7 +500,9 @@ pub const Template = struct {
                 if (iter.peek()) |first| {
                     if (mem.eql(u8, first, new_token)) {
                         // Static token
-                        if (!hasStatic(tokens.items, new_token)) {
+                        if (!seen.contains(new_token)) {
+                            try seen.put(new_token, {});
+
                             const token = Static {
                                 .name = new_token,
                                 .raw_token = try p.peekStr(begin.?, end.?)
@@ -532,7 +538,11 @@ pub const Template = struct {
 
             try skipComment(&p);
             if (p.peek() == null) break;
+
+            // Consumes one candidate byte, then skips ahead in bulk to the
+            // next one - tokens only ever start at '{', '}' or '<'
             _ = try p.next();
+            p.scanTo("{<}");
         }
 
         if (tokens.items.len > 0) return try tokens.toOwnedSlice(heap)
@@ -566,22 +576,13 @@ pub const Template = struct {
         self.data = @constCast(data);
     }
 
-    /// # Removes Duplicate Static Template Tokens
-    /// - For one-shot expansion, since static tokens have a fixed data mapping
-    fn hasStatic(tokens: []Token, name: Str) bool {
-        for (tokens) |item| {
-            switch (item) {
-                .static => |v| if (mem.eql(u8, v.name, name)) return true,
-                .dynamic => {}
-            }
-        }
-
-        return false;
-    }
-
     /// # Skips HTML Comment
     fn skipComment(p: *parser) !void {
         if (!p.eatStr("<!--")) return;
-        while (p.peek() != null and !p.eatStr("-->")) { _ = try p.next(); }
+        while (p.peek() != null) {
+            if (p.eatStr("-->")) return;
+            _ = try p.next();
+            p.scanTo("-");
+        }
     }
 };

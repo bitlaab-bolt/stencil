@@ -91,6 +91,21 @@ fn consume(self: *Self) u8 {
     return char;
 }
 
+/// # Consumes Characters In Bulk
+/// - Updates the internal parser state for `n` consumed characters
+fn advance(self: *Self, n: usize) void {
+    const chunk = self.src[self.offset..self.offset + n];
+
+    if (mem.lastIndexOfScalar(u8, chunk, SpecialChar.LF)) |lf| {
+        self.line += mem.count(u8, chunk, "\n");
+        self.column = chunk.len - (lf + 1);
+    } else {
+        self.column += n;
+    }
+
+    self.offset += n;
+}
+
 /// # Eats the Character
 /// - Eats the given character when it matches the `peek()` character
 pub fn eat(self: *Self, char: u8) bool {
@@ -125,8 +140,7 @@ fn expectStr(self: *Self, expected: []const u8) !void {
 
     const remaining = self.src[self.offset..];
     if (mem.startsWith(u8, remaining, expected)) {
-        var i: usize = 0;
-        while (i < expected.len) : (i += 1) _ = self.consume();
+        self.advance(expected.len);
         return;
     }
 
@@ -153,6 +167,19 @@ pub fn eatSp(self: *Self) bool {
     }
 
     return ws;
+}
+
+/// # Skips to the Next Candidate Character
+/// - Advances the cursor to the first byte matching any of the `set`
+///   characters, or to the end of the source when none remains
+/// - The cursor lands **on** the candidate byte (not consumed)
+pub fn scanTo(self: *Self, set: []const u8) void {
+    const found = mem.indexOfAnyPos(u8, self.src, self.offset, set) orelse {
+        self.advance(self.src.len - self.offset);
+        return;
+    };
+
+    self.advance(found - self.offset);
 }
 
 /// # Returns the Current Offset Position
