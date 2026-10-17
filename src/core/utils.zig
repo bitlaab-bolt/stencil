@@ -2,8 +2,6 @@
 
 const std = @import("std");
 const Io = std.Io;
-const fs = std.fs;
-const mem = std.mem;
 const debug = std.debug;
 const Allocator = std.mem.Allocator;
 const SrcLoc = std.builtin.SourceLocation;
